@@ -1,0 +1,46 @@
+{
+  "name": "material-island",
+  "version": "0.1.0",
+  "description": "灵动岛风格 Windows 通知中枢 — Material Design 3",
+  "license": "AGPL-3.0-only",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "@material/material-color-utilities": "^0.3.0",
+    "@vueuse/core": "^10.11.0",
+    "@vueuse/motion": "^2.2.3",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@electron-toolkit/utils": "^3.0.0",
+    "@vitejs/plugin-vue": "^5.0.4",
+    "electron": "^30.0.1",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.1.0",
+    "typescript": "^5.4.5",
+    "vue-tsc": "^2.0.14"
+  },
+  "build": {
+    "appId": "com.material-island.app",
+    "productName": "Material Island",
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "extraResources": [
+      {
+        "from": "sidecar/SmtcServer/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish/SmtcServer.exe",
+        "to": "SmtcServer.exe"
+      }
+    ],
+    "files": [
+      "out/**/*"
+    ]
+  }
+}

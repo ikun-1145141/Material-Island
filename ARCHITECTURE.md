@@ -19,9 +19,10 @@
    - 5.4 [UI 组件层](#54-ui-组件层)
    - 5.5 [动效系统](#55-动效系统)
    - 5.6 [M3 主题系统](#56-m3-主题系统)
-6. [数据流](#6-数据流)
-7. [扩展指南](#7-扩展指南)
-8. [启动与构建](#8-启动与构建)
+6. [模块化设计](#6-模块化设计)
+7. [数据流](#7-数据流)
+8. [扩展指南](#8-扩展指南)
+9. [启动与构建](#9-启动与构建)
 
 ---
 
@@ -416,7 +417,74 @@ useM3Theme('#6750A4')  // 传入品牌色，M3 自动生成全套配色
 
 ---
 
-## 6. 数据流
+## 6. 模块化设计
+
+### 6.1 模块化原则
+
+| 原则 | 说明 |
+|------|------|
+| **单一职责** | 每个模块只做一件事：Provider 采集数据、Store 管理状态、Component 渲染 |
+| **接口契约** | 模块间通过 `src/shared/types.ts` 中的 TypeScript 接口通信，不依赖实现细节 |
+| **依赖倒置** | 组件依赖 Pinia 抽象，不感知 Electron/IPC；Composable 封装所有副作用 |
+| **可替换 Provider** | `main/providers/*` 均继承 `EventEmitter`，可以独立替换（如把 PS 轮询换成原生模块）|
+| **分层访问** | 严禁组件直接调用 `window.electron.*`，必须经过 `composables/useWinBridge` |
+
+### 6.2 模块依赖图
+
+```
+src/shared/types.ts          ← 所有模块共同依赖的类型契约
+        │
+        ├──► src/main/providers/*   (采集层)
+        │         │ EventEmitter
+        │         ▼
+        │    src/main/index.ts      (IPC 转发层)
+        │         │ ipcRenderer.send / on
+        │         ▼
+        ├──► src/preload/index.ts   (安全桥接层)
+        │         │ contextBridge
+        │         ▼
+        ├──► composables/useWinBridge.ts  (渲染层 IO 封装)
+        │         │
+        │         ▼
+        ├──► store/island.ts        (状态机层)
+        │         │ ref / computed
+        │         ▼
+        └──► components/*           (纯展示层，只读 Store)
+```
+
+### 6.3 各模块边界规则
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Module              │ 允许依赖              │ 禁止依赖    │
+├─────────────────────┼───────────────────────┼────────────┤
+│ components/*        │ store, composables    │ preload    │
+│ composables/*       │ store, window.electron│ ipcRenderer│
+│ store/island.ts     │ shared/types          │ electron   │
+│ preload/index.ts    │ ipcRenderer, types    │ main       │
+│ main/providers/*    │ Node.js, types        │ renderer   │
+│ main/index.ts       │ providers, ipcMain    │ renderer   │
+└─────────────────────┴───────────────────────┴────────────┘
+```
+
+### 6.4 扩展新功能的标准路径
+
+新增一个系统数据源（如 CPU 占用显示）：
+
+```
+1. shared/types.ts      → 添加 CpuInfo 接口
+2. main/providers/      → 新建 cpu.ts，继承 EventEmitter，轮询数据
+3. main/index.ts        → 注册 ipcMain，订阅 provider 并 send 给渲染层
+4. preload/index.ts     → contextBridge 新增 onCpuUpdate 方法
+5. store/island.ts      → 添加 cpuInfo ref + applyUpdate action
+6. components/          → 新建 CpuView.vue，从 store 读数据
+```
+
+每一步独立，不影响其他模块。
+
+---
+
+## 7. 数据流
 
 ```
 系统事件（媒体/通知）
@@ -451,7 +519,7 @@ useM3Theme('#6750A4')  // 传入品牌色，M3 自动生成全套配色
 
 ---
 
-## 7. 扩展指南
+## 8. 扩展指南
 
 ### 新增一种岛状态
 
@@ -470,7 +538,7 @@ useM3Theme('#6750A4')  // 传入品牌色，M3 自动生成全套配色
 
 ---
 
-## 8. 启动与构建
+## 9. 启动与构建
 
 ```bash
 # 安装依赖

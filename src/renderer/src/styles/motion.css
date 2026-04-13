@@ -1,0 +1,37 @@
+/**
+ * Material Design 3 动效系统
+ * 基于官方 Motion 规范定义全局过渡变量
+ * https://m3.material.io/styles/motion/overview
+ */
+
+:root {
+  /* ── 时长 ── */
+  --md-motion-duration-short1:  50ms;
+  --md-motion-duration-short2:  100ms;
+  --md-motion-duration-short3:  150ms;
+  --md-motion-duration-short4:  200ms;
+  --md-motion-duration-medium1: 250ms;
+  --md-motion-duration-medium2: 300ms;
+  --md-motion-duration-medium3: 350ms;
+  --md-motion-duration-medium4: 400ms;
+  --md-motion-duration-long1:   450ms;
+  --md-motion-duration-long2:   500ms;
+
+  /* ── 缓动曲线 ── */
+  /* 标准：常规 UI 状态变化 */
+  --md-motion-easing-standard:          cubic-bezier(0.2, 0, 0, 1);
+  /* 减速：元素进入屏幕 */
+  --md-motion-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  /* 加速：元素离开屏幕 */
+  --md-motion-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  /* 强调：需要注意力的变化（岛的扩展/收缩） */
+  --md-motion-easing-emphasized:          cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+
+  /* ── 便捷别名（语义化） ── */
+  --md-motion-duration-short:  var(--md-motion-duration-short3);   /* 150ms */
+  --md-motion-duration-medium: var(--md-motion-duration-medium1);  /* 250ms */
+  --md-motion-duration-long:   var(--md-motion-duration-long1);    /* 450ms */
+  --md-motion-easing-standard-alias: var(--md-motion-easing-standard);
+}

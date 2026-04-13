@@ -1,0 +1,65 @@
+/**
+ * Material Design 3 CSS Token 系统
+ * 默认值对应 M3 官方暗色主题基准色板（#6750A4 品牌色）
+ * 运行时会被 useM3Theme 计算出的精确值覆盖
+ */
+
+:root {
+  /* ── Primary ── */
+  --md-sys-color-primary:            #d0bcff;
+  --md-sys-color-on-primary:         #21005d;
+  --md-sys-color-primary-container:  #4f378b;
+  --md-sys-color-on-primary-container: #eaddff;
+
+  /* ── Secondary ── */
+  --md-sys-color-secondary:          #ccc2dc;
+  --md-sys-color-on-secondary:       #332d41;
+  --md-sys-color-secondary-container:#4a4458;
+  --md-sys-color-on-secondary-container: #e8def8;
+
+  /* ── Tertiary ── */
+  --md-sys-color-tertiary:           #efb8c8;
+  --md-sys-color-on-tertiary:        #492532;
+  --md-sys-color-tertiary-container: #633b48;
+  --md-sys-color-on-tertiary-container: #ffd8e4;
+
+  /* ── Error ── */
+  --md-sys-color-error:              #f2b8b5;
+  --md-sys-color-on-error:           #601410;
+  --md-sys-color-error-container:    #8c1d18;
+  --md-sys-color-on-error-container: #f9dedc;
+
+  /* ── Surface ── */
+  --md-sys-color-surface:                    #141218;
+  --md-sys-color-on-surface:                 #e6e1e5;
+  --md-sys-color-surface-variant:            #49454f;
+  --md-sys-color-on-surface-variant:         #cac4d0;
+  --md-sys-color-surface-container-lowest:   #0f0d13;
+  --md-sys-color-surface-container-low:      #1d1b20;
+  --md-sys-color-surface-container:          #211f26;
+  --md-sys-color-surface-container-high:     #2b2930;
+  --md-sys-color-surface-container-highest:  #36343b;
+
+  /* ── Outline ── */
+  --md-sys-color-outline:        #938f99;
+  --md-sys-color-outline-variant:#49454f;
+
+  /* ── Scrim / Shadow ── */
+  --md-sys-color-scrim: #000000;
+
+  /* ── Shape ── */
+  --md-sys-shape-corner-full:        999px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-large:       16px;
+  --md-sys-shape-corner-medium:      12px;
+  --md-sys-shape-corner-small:       8px;
+  --md-sys-shape-corner-extra-small: 4px;
+
+  /* ── Typography (Display) ── */
+  --md-sys-typescale-body-small-size:   11px;
+  --md-sys-typescale-body-medium-size:  13px;
+  --md-sys-typescale-body-large-size:   14px;
+  --md-sys-typescale-label-small-size:  10px;
+  --md-sys-typescale-label-medium-size: 11px;
+  --md-sys-typescale-label-large-size:  13px;
+}
