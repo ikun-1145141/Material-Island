@@ -3,10 +3,6 @@
 
     <!-- 紧凑态 -->
     <div v-if="!store.isExpanded" class="music-pill">
-      <div class="pill-art">
-        <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="" />
-        <span v-else>♫</span>
-      </div>
       <button class="pill-btn" @click.stop="ctrl('toggle')">
         <svg v-if="isPlaying" viewBox="0 0 24 24" fill="currentColor">
           <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
@@ -15,6 +11,10 @@
           <path d="M8 5v14l11-7z"/>
         </svg>
       </button>
+      <div class="pill-art">
+        <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="" />
+        <span v-else>♫</span>
+      </div>
       <span class="pill-title">{{ info.title || '未知曲目' }}</span>
       <span v-if="info.artist" class="pill-sep"> · </span>
       <span v-if="info.artist" class="pill-artist">{{ info.artist }}</span>
