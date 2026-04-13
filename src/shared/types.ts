@@ -7,7 +7,18 @@ export interface MediaInfo {
   artist: string
   album: string
   playbackStatus: 'playing' | 'paused' | 'stopped' | 'unknown'
-  thumbnailDataUrl?: string // base64 封面图
+  thumbnailDataUrl?: string  // base64 封面图
+  position?: number          // 当前播放位置（秒）
+  duration?: number          // 总时长（秒）
+  source?: string            // 播放来源应用名称
+  deviceName?: string        // 音频输出设备名称
+  deviceType?: 'speaker' | 'headphone' | 'unknown'
+}
+
+// ── 进度更新（高频，独立于完整 MediaInfo）──────────────────
+export interface MediaPosition {
+  position: number
+  duration: number
 }
 
 // ── 系统通知 ──────────────────────────────────────────────
@@ -33,5 +44,7 @@ export const IPC = {
   ISLAND_PIN:           'island:pin',
   ISLAND_BLUR:          'island:blur',
   MEDIA_UPDATE:         'media:update',
+  MEDIA_POSITION:       'media:position',
+  MEDIA_CONTROL:        'media:control',
   NOTIFY_NEW:           'notify:new',
 } as const

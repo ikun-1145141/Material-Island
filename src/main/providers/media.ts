@@ -4,7 +4,7 @@ import { createInterface } from 'readline'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
-import type { MediaInfo } from '../../shared/types'
+import type { MediaInfo, MediaPosition } from '../../shared/types'
 
 // 开发时从 dotnet build 输出目录读取，生产时从 resources/ 读取
 function resolveExePath(): string {
@@ -56,7 +56,7 @@ class MediaProvider extends EventEmitter {
 
     try {
       this._proc = spawn(exePath, [], {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
       })
     } catch (err) {
@@ -86,16 +86,30 @@ class MediaProvider extends EventEmitter {
         return
       }
 
+      if (parsed.status === 'position') {
+        // 高频进度更新，单独发出 position 事件
+        this.emit('position', {
+          position: Number(parsed.position) || 0,
+          duration: Number(parsed.duration) || 0,
+        } satisfies MediaPosition)
+        return
+      }
+
       if (parsed.status !== 'ok') return
 
       this.emit('update', {
-        title:            parsed.title   ?? '',
-        artist:           parsed.artist  ?? '',
-        album:            parsed.album   ?? '',
+        title:            parsed.title      ?? '',
+        artist:           parsed.artist     ?? '',
+        album:            parsed.album      ?? '',
         playbackStatus:   this._mapStatus(parsed.playback),
         thumbnailDataUrl: parsed.thumb
           ? this._toDataUrl(parsed.thumb)
           : undefined,
+        position:    Number(parsed.position)   || 0,
+        duration:    Number(parsed.duration)   || 0,
+        source:      parsed.source             ?? '',
+        deviceName:  parsed.deviceName         ?? '',
+        deviceType:  this._mapDevice(parsed.deviceType),
       } satisfies MediaInfo)
     })
 
@@ -128,6 +142,19 @@ class MediaProvider extends EventEmitter {
     else if (b64.startsWith('R0lG')) mime = 'image/gif'
     else if (b64.startsWith('UklG')) mime = 'image/webp'
     return `data:${mime};base64,${b64}`
+  }
+
+  /** 向 C# sidecar 发送控制命令（每行一条） */
+  sendControl(action: 'prev' | 'next' | 'toggle'): void {
+    if (this._proc?.stdin?.writable) {
+      this._proc.stdin.write(action + '\n')
+    }
+  }
+
+  private _mapDevice(s: string): MediaInfo['deviceType'] {
+    if (s === 'headphone') return 'headphone'
+    if (s === 'speaker')   return 'speaker'
+    return 'unknown'
   }
 
   private _mapStatus(s: string): MediaInfo['playbackStatus'] {

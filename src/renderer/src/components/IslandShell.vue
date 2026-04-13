@@ -7,31 +7,31 @@
     :style="shellStyle"
     @click="store.togglePin()"
   >
-    <Transition name="island-content" mode="out-in">
-      <component :is="activeComponent" :key="store.mode" />
-    </Transition>
+    <component :is="activeComponent" :key="store.mode" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, defineAsyncComponent } from 'vue'
+import { ref, computed } from 'vue'
 import { useIslandStore } from '@renderer/store/island'
 import { useIslandMouse } from '@renderer/composables/useIslandMouse'
 import type { IslandMode } from '@renderer/store/island'
 import type { Component } from 'vue'
+import CompactVue      from './Compact.vue'
+import MusicVue        from './Music.vue'
+import NotificationVue from './Notification.vue'
+import TimerVue        from './Timer.vue'
 
 const store = useIslandStore()
 const shellRef = ref<HTMLElement | null>(null)
 
-// 鼠标进出检测 → 展开/收起 + 切换穿透
 useIslandMouse(shellRef)
 
-// 模式 → 组件映射表（异步加载，各状态组件按需分包）
 const componentMap: Record<IslandMode, Component> = {
-  COMPACT:      defineAsyncComponent(() => import('./Compact.vue')),
-  MUSIC:        defineAsyncComponent(() => import('./Music.vue')),
-  NOTIFICATION: defineAsyncComponent(() => import('./Notification.vue')),
-  TIMER:        defineAsyncComponent(() => import('./Timer.vue')),
+  COMPACT:      CompactVue,
+  MUSIC:        MusicVue,
+  NOTIFICATION: NotificationVue,
+  TIMER:        TimerVue,
 }
 
 const activeComponent = computed(() => componentMap[store.mode])

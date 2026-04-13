@@ -30,6 +30,13 @@ app.on('window-all-closed', () => {
 // ── IPC 注册 ───────────────────────────────────────────────
 
 function registerIpcHandlers(): void {
+  // 渲染层控制指令（上一首/下一首/暂停）转发到 sidecar
+  ipcMain.on(IPC.MEDIA_CONTROL, (_, action: string) => {
+    if (['prev', 'next', 'toggle'].includes(action)) {
+      mediaProvider.sendControl(action as 'prev' | 'next' | 'toggle')
+    }
+  })
+
   // 渲染层请求切换鼠标穿透状态
   ipcMain.on(IPC.ISLAND_CLICKTHROUGH, (_, enable: boolean) => {
     win?.setIgnoreMouseEvents(enable, { forward: true })
@@ -57,6 +64,9 @@ function startProviders(): void {
   // 媒体信息：轮询 Windows SMTC，有变化时推送到渲染层
   mediaProvider.on('update', (info) => {
     win?.webContents.send(IPC.MEDIA_UPDATE, info)
+  })
+  mediaProvider.on('position', (pos) => {
+    win?.webContents.send(IPC.MEDIA_POSITION, pos)
   })
   mediaProvider.start()
 

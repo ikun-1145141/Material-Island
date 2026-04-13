@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MediaInfo, NoticeInfo } from '../shared/types'
+import type { MediaInfo, NoticeInfo, MediaPosition } from '../shared/types'
 import { IPC } from '../shared/types'
 
 // 严格最小接口原则：只暴露渲染层实际需要的方法
@@ -32,6 +32,24 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = (): void => cb()
     ipcRenderer.on(IPC.ISLAND_BLUR, handler)
     return () => ipcRenderer.off(IPC.ISLAND_BLUR, handler)
+  },
+
+  /**
+   * 向主进程发送播放控制指令
+   */
+  mediaControl: (action: 'prev' | 'next' | 'toggle'): void => {
+    if (!['prev', 'next', 'toggle'].includes(action)) return
+    ipcRenderer.send(IPC.MEDIA_CONTROL, action)
+  },
+
+  /**
+   * 订阅高频播放进度更新（独立于完整 MediaInfo）
+   * 返回取消订阅函数
+   */
+  onMediaPosition: (cb: (pos: MediaPosition) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, pos: MediaPosition): void => cb(pos)
+    ipcRenderer.on(IPC.MEDIA_POSITION, handler)
+    return () => ipcRenderer.off(IPC.MEDIA_POSITION, handler)
   },
 
   /**

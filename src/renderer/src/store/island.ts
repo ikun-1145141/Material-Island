@@ -8,12 +8,14 @@ export type IslandMode = 'COMPACT' | 'MUSIC' | 'NOTIFICATION' | 'TIMER'
 // 各状态对应的岛尺寸（展开后）
 const SIZE_MAP: Record<IslandMode, { width: number; height: number }> = {
   COMPACT:      { width: 240, height: 72  },
-  MUSIC:        { width: 360, height: 80  },
+  MUSIC:        { width: 360, height: 135 },
   NOTIFICATION: { width: 340, height: 80  },
   TIMER:        { width: 260, height: 60  },
 }
 
-const COMPACT_SIZE = { width: 210, height: 36 }
+const COMPACT_SIZE      = { width: 210, height: 36 }
+/** 音乐播放中但未展开：小丸乑稍宽，显示播放图标 */
+const MUSIC_COMPACT_SIZE = { width: 280, height: 36 }
 
 // 通知自动收回延迟（ms）
 const NOTIFICATION_TIMEOUT_MS = 5000
@@ -26,8 +28,14 @@ export const useIslandStore = defineStore('island', () => {
   const isPinned   = ref(false)
   const mediaInfo  = ref<MediaInfo | null>(null)
   const notification = ref<NoticeInfo | null>(null)
+  /** 当前播放位置（秒） */
+  const position   = ref(0)
+  /** 总时长（秒） */
+  const duration   = ref(0)
 
   let _noticeTimer: ReturnType<typeof setTimeout> | null = null
+  /** 媒体停止/无会话时，延迟 3s 才收起岛，避免换曲间简短闪断导致抚闪 */
+  let _mediaResetTimer: ReturnType<typeof setTimeout> | null = null
 
   // ── 计算属性 ──────────────────────────────────────────────
   /**
@@ -35,9 +43,13 @@ export const useIslandStore = defineStore('island', () => {
    * - 未展开时固定为 COMPACT_SIZE
    * - 展开时根据 mode 动态计算
    */
-  const islandSize = computed(() =>
-    isExpanded.value ? SIZE_MAP[mode.value] : COMPACT_SIZE,
-  )
+  const islandSize = computed(() => {
+    if (!isExpanded.value) {
+      if (mode.value === 'MUSIC') return MUSIC_COMPACT_SIZE
+      return COMPACT_SIZE
+    }
+    return SIZE_MAP[mode.value]
+  })
 
   // ── 动作 ──────────────────────────────────────────────────
 
@@ -48,33 +60,47 @@ export const useIslandStore = defineStore('island', () => {
   function collapse(): void {
     // 已锁定时不收起
     if (isPinned.value) return
+    // 非紧凑模式（音乐/通知/计时器）由各自逻辑控制收起，鼠标离开不收起
+    if (mode.value !== 'COMPACT') return
     isExpanded.value = false
   }
 
-  /** 点击切换锁定展开状态 */
+  /** 点击切换展开/收起 */
   function togglePin(): void {
-    isPinned.value = !isPinned.value
-    isExpanded.value = isPinned.value
-    if (isPinned.value) {
-      // 请求主进程激活窗口聚焦，就可监听失焦点（点击其他窗口）
-      window.electron.pin()
+    if (isExpanded.value) {
+      // 已展开 → 收起
+      isExpanded.value = false
+      isPinned.value   = false
+    } else {
+      // 未展开 → 展开（不需要 Electron 焦点，避免 blur 立即触发收起）
+      isExpanded.value = true
+      isPinned.value   = true
     }
   }
 
   /** 接收媒体更新，切换到音乐模式 */
   function applyMediaUpdate(info: MediaInfo): void {
     mediaInfo.value = info
+    if (info.position !== undefined) position.value = info.position
+    if (info.duration !== undefined) duration.value = info.duration
     if (info.playbackStatus === 'stopped' || info.playbackStatus === 'unknown') {
-      // 无活跃媒体时回到紧凑态，并收起岛（除非用户 pin 住了）
-      if (mode.value === 'MUSIC') {
-        mode.value = 'COMPACT'
-        if (!isPinned.value) isExpanded.value = false
+      // 安排延迟重置而不是立即重置，避免换曲间短暂丢失会话导致抚闪
+      if (mode.value === 'MUSIC' && !_mediaResetTimer) {
+        _mediaResetTimer = setTimeout(() => {
+          _mediaResetTimer = null
+          const s = mediaInfo.value?.playbackStatus
+          if (s === 'stopped' || s === 'unknown' || !s) {
+            mode.value       = 'COMPACT'
+            isExpanded.value = false
+            isPinned.value   = false
+          }
+        }, 3000)
       }
       return
     }
-    // 有媒体在播放：切换到音乐模式并自动展开
+    // 有媒体播放：清除延迟定时并切换到音乐模式，不自动展开
+    if (_mediaResetTimer) { clearTimeout(_mediaResetTimer); _mediaResetTimer = null }
     mode.value = 'MUSIC'
-    isExpanded.value = true
   }
 
   /** 接收系统通知，临时切换到通知模式，5 秒后自动收回 */
@@ -102,18 +128,23 @@ export const useIslandStore = defineStore('island', () => {
    * 返回清理函数，onUnmounted 时调用
    */
   function init(): () => void {
-    const offMedia  = window.electron.onMediaUpdate(applyMediaUpdate)
+    const offMedia    = window.electron.onMediaUpdate(applyMediaUpdate)
+    const offPosition = window.electron.onMediaPosition((pos) => {
+      position.value = pos.position
+      duration.value = pos.duration
+    })
     const offNotice = window.electron.onNotification(applyNotification)
-    // 窗口失焦点 → 自动解除 pin
+    // 窗口失焦点 → 解除 pin，不直接操作 isExpanded（避免连续两次展开后立即护展开）
     const offBlur   = window.electron.onWindowBlur(() => {
-      isPinned.value   = false
-      isExpanded.value = false
+      isPinned.value = false
     })
     return () => {
       offMedia()
+      offPosition()
       offNotice()
       offBlur()
       if (_noticeTimer) clearTimeout(_noticeTimer)
+      if (_mediaResetTimer) clearTimeout(_mediaResetTimer)
     }
   }
 
@@ -124,6 +155,8 @@ export const useIslandStore = defineStore('island', () => {
     isPinned,
     mediaInfo,
     notification,
+    position,
+    duration,
     // computed
     islandSize,
     // actions

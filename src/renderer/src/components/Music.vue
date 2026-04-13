@@ -1,36 +1,71 @@
 <template>
   <div class="music-view">
-    <Transition name="fade" mode="out-in">
 
-      <!-- 紧凑态：封面 + 频谱 -->
-      <div v-if="!store.isExpanded" class="music-compact">
-        <div class="album-art-compact">
-          <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="封面" />
-          <span v-else class="album-placeholder-compact">♫</span>
-        </div>
-        <Spectrum :playing="isPlaying" />
+    <!-- 紧凑态 -->
+    <div v-if="!store.isExpanded" class="music-pill">
+      <div class="pill-art">
+        <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="" />
+        <span v-else>♫</span>
       </div>
-
-      <!-- 展开态：封面 + 歌曲信息 + 频谱 -->
-      <div v-else class="music-expanded">
-        <div class="album-art-expanded">
-          <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="封面" />
-          <span v-else class="album-placeholder-expanded">♫</span>
-        </div>
-        <div class="track-info">
-          <p class="track-title">{{ info.title || '未知曲目' }}</p>
-          <p class="track-artist">{{ info.artist || '未知艺术家' }}</p>
-          <p class="track-album">{{ info.album }}</p>
-        </div>
-        <Spectrum :playing="isPlaying" :bars="7" />
+      <button class="pill-btn" @click.stop="ctrl('toggle')">
+        <svg v-if="isPlaying" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+        <svg v-else viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+      </button>
+      <span class="pill-title">{{ info.title || '未知曲目' }}</span>
+      <span v-if="info.artist" class="pill-sep"> · </span>
+      <span v-if="info.artist" class="pill-artist">{{ info.artist }}</span>
+      <div class="spectrum">
+        <span class="bar" :class="{ active: isPlaying }"></span>
+        <span class="bar" :class="{ active: isPlaying }" style="animation-delay:.15s"></span>
+        <span class="bar" :class="{ active: isPlaying }" style="animation-delay:.3s"></span>
+        <span class="bar" :class="{ active: isPlaying }" style="animation-delay:.08s"></span>
       </div>
+    </div>
 
-    </Transition>
+    <!-- 展开态 -->
+    <div v-else class="music-expanded">
+      <div class="art">
+        <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="" />
+        <span v-else class="art-fallback">♫</span>
+      </div>
+      <!-- art 占位，flex 撑高已由 .art 固定高度控制 -->
+      <div class="info-col">
+        <span v-if="info.source" class="source-badge">{{ info.source }}</span>
+        <p class="exp-title">{{ info.title || '未知曲目' }}</p>
+        <p class="exp-artist">{{ info.artist || '未知艺术家' }}</p>
+        <div class="progress-area">
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
+          </div>
+          <div class="time-row">
+            <span>{{ fmt(safePos) }}</span>
+            <span>{{ fmt(safeDur) }}</span>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="ctrl-btn" @click.stop="ctrl('prev')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+          </button>
+          <button class="ctrl-btn primary" @click.stop="ctrl('toggle')">
+            <svg v-if="isPlaying" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="ctrl-btn" @click.stop="ctrl('next')">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h } from 'vue'
+import { computed } from 'vue'
 import { useIslandStore } from '@renderer/store/island'
 import type { MediaInfo } from '@shared/types'
 
@@ -40,182 +75,245 @@ const info = computed<MediaInfo>(() =>
   store.mediaInfo ?? { title: '', artist: '', album: '', playbackStatus: 'unknown' },
 )
 
-const isPlaying = computed(() => info.value.playbackStatus === 'playing')
+const isPlaying  = computed(() => info.value.playbackStatus === 'playing')
 
-// ── 频谱组件（内联，避免多余文件） ────────────────────────
-const Spectrum = defineComponent({
-  props: {
-    playing: { type: Boolean, default: false },
-    bars:    { type: Number,  default: 5 },
-  },
-  setup(props) {
-    // 每根柱子的动画延迟，制造参差感
-    const delays = [0, 0.3, 0.15, 0.45, 0.1, 0.35, 0.2]
-
-    return () =>
-      h('div', { class: 'spectrum' },
-        Array.from({ length: props.bars }, (_, i) =>
-          h('span', {
-            class: ['bar', props.playing ? 'active' : 'idle'],
-            style: { animationDelay: `${delays[i % delays.length]}s` },
-          }),
-        ),
-      )
-  },
+// 防御：后端 elapsed 偶尔溢出，前端二次钳位
+const safeDur = computed(() => Math.max(0, store.duration))
+const safePos = computed(() => {
+  const d = safeDur.value
+  const p = Math.max(0, store.position)
+  return d > 0 ? Math.min(p, d) : p
 })
+
+const progressPct = computed(() => {
+  const d = safeDur.value
+  if (d <= 0) return 0
+  return Math.min(100, (safePos.value / d) * 100)
+})
+
+function fmt(sec: number): string {
+  if (!sec || sec <= 0) return '0:00'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return m + ':' + String(s).padStart(2, '0')
+}
+
+function ctrl(action: 'prev' | 'next' | 'toggle'): void {
+  window.electron.mediaControl(action)
+}
 </script>
 
 <style scoped>
 .music-view {
-  display: flex;
-  align-items: center;
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
-/* ── 紧凑态 ── */
-.music-compact {
+/* 紧凑态 */
+.music-pill {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
   height: 100%;
-  padding: 0 14px 0 8px;
-  gap: 12px;
+  padding: 0 10px 0 6px;
+  gap: 7px;
 }
-
-.album-art-compact {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  overflow: hidden;
-  flex-shrink: 0;
-  background: var(--md-sys-color-surface-variant, #49454f);
+.pill-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.album-art-compact img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.album-placeholder-compact {
-  font-size: 13px;
-  color: var(--md-sys-color-on-surface-variant, #cac4d0);
-}
-
-/* ── 展开态 ── */
-.music-expanded {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  padding: 10px 14px 10px 10px;
-  gap: 12px;
-}
-
-.album-art-expanded {
-  width: 56px;
-  height: 56px;
-  border-radius: 10px;
-  overflow: hidden;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-primary, #d0bcff);
+  cursor: pointer;
+  padding: 0;
   flex-shrink: 0;
-  background: var(--md-sys-color-surface-variant, #49454f);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: transform 0.1s;
 }
-.album-art-expanded img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.album-placeholder-expanded {
-  font-size: 22px;
-  color: var(--md-sys-color-on-surface-variant, #cac4d0);
-}
-
-.track-info {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.track-title {
-  font-size: 13px;
+.pill-btn:active { transform: scale(0.85); }
+.pill-btn svg { width: 16px; height: 16px; }
+.pill-title {
+  font-size: 12px;
   font-weight: 600;
   color: var(--md-sys-color-on-surface, #e6e1e5);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin: 0;
+  flex: 1;
+  min-width: 0;
 }
-.track-artist {
+.pill-sep {
+  font-size: 11px;
+  color: var(--md-sys-color-outline, #938f99);
+  flex-shrink: 0;
+}
+.pill-artist {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant, #cac4d0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 2;
+}
+
+/* 展开态 */
+.music-expanded {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding: 9px 12px 9px 10px;
+  gap: 11px;
+}
+.art {
+  width: 58px;
+  height: 58px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--md-sys-color-surface-variant, #49454f);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+.art img { width: 100%; height: 100%; object-fit: cover; }
+.art-fallback { font-size: 22px; color: var(--md-sys-color-on-surface-variant, #cac4d0); }
+.info-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.source-badge {
+  font-size: 10px;
+  color: var(--md-sys-color-outline, #938f99);
+  background: rgba(255,255,255,0.06);
+  padding: 1px 7px;
+  border-radius: 99px;
+  align-self: flex-start;
+}
+.exp-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface, #e6e1e5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  line-height: 1.2;
+}
+.exp-artist {
   font-size: 11px;
   color: var(--md-sys-color-on-surface-variant, #cac4d0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin: 0;
+  line-height: 1.2;
 }
-.track-album {
-  font-size: 10px;
-  color: var(--md-sys-color-outline, #938f99);
-  white-space: nowrap;
+.progress-area {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+.progress-bar {
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.12);
   overflow: hidden;
-  text-overflow: ellipsis;
-  margin: 0;
 }
+.progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--md-sys-color-primary, #d0bcff);
+  transition: width 0.5s linear;
+}
+.time-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--md-sys-color-outline, #938f99);
+}
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+}
+.ctrl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant, #cac4d0);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.ctrl-btn svg { width: 17px; height: 17px; }
+.ctrl-btn:hover { background: rgba(255,255,255,0.08); }
+.ctrl-btn:active { transform: scale(0.88); }
+.ctrl-btn.primary {
+  width: 32px;
+  height: 32px;
+  background: var(--md-sys-color-primary-container, #4a4458);
+  color: var(--md-sys-color-on-primary-container, #e8def8);
+}
+.ctrl-btn.primary svg { width: 19px; height: 19px; }
+.ctrl-btn.primary:hover { background: var(--md-sys-color-primary, #d0bcff); color: #1c1b1f; }
 
-/* ── 频谱 ── */
-:deep(.spectrum) {
+/* 紧凑态封面 */
+.pill-art {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--md-sys-color-surface-variant, #49454f);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant, #cac4d0);
+}
+.pill-art img { width: 100%; height: 100%; object-fit: cover; }
+
+/* 频谱 */
+.spectrum {
   display: flex;
   align-items: flex-end;
-  gap: 3px;
-  height: 20px;
+  gap: 2px;
+  height: 16px;
   flex-shrink: 0;
 }
-
-:deep(.bar) {
+.bar {
   width: 3px;
+  height: 3px;
   border-radius: 2px;
   background: var(--md-sys-color-primary, #d0bcff);
-  transform-origin: bottom;
 }
-
-/* 播放中：各柱子独立弹跳 */
-:deep(.bar.active) {
+.bar.active {
   animation: spectrum-bounce 0.8s ease-in-out infinite alternate;
 }
-:deep(.bar.active:nth-child(1)) { animation-duration: 0.7s; }
-:deep(.bar.active:nth-child(2)) { animation-duration: 0.5s; }
-:deep(.bar.active:nth-child(3)) { animation-duration: 0.9s; }
-:deep(.bar.active:nth-child(4)) { animation-duration: 0.6s; }
-:deep(.bar.active:nth-child(5)) { animation-duration: 0.75s; }
-:deep(.bar.active:nth-child(6)) { animation-duration: 0.55s; }
-:deep(.bar.active:nth-child(7)) { animation-duration: 0.85s; }
-
-/* 暂停：固定矮柱 */
-:deep(.bar.idle) {
-  height: 4px;
-  transition: height 0.4s ease;
-}
+.bar:nth-child(1) { animation-duration: 0.70s; }
+.bar:nth-child(2) { animation-duration: 0.50s; }
+.bar:nth-child(3) { animation-duration: 0.90s; }
+.bar:nth-child(4) { animation-duration: 0.60s; }
 
 @keyframes spectrum-bounce {
-  from { height: 4px;  opacity: 0.7; }
-  to   { height: 20px; opacity: 1;   }
-}
-
-/* ── 内容切换 ── */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+  from { height: 3px; }
+  to   { height: 16px; }
 }
 </style>
