@@ -38,8 +38,13 @@
         <p class="exp-title">{{ info.title || '未知曲目' }}</p>
         <p class="exp-artist">{{ info.artist || '未知艺术家' }}</p>
         <div class="progress-area">
-          <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
+          <div
+            class="progress-bar"
+            :class="{ dragging: isDragging }"
+            @mousedown.stop="onProgressMousedown"
+          >
+            <div class="progress-fill" :style="{ width: displayPct + '%' }"></div>
+            <div class="progress-thumb" :style="{ left: displayPct + '%' }"></div>
           </div>
           <div class="time-row">
             <span>{{ fmt(safePos) }}</span>
@@ -65,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onUnmounted } from 'vue'
 import { useIslandStore } from '@renderer/store/island'
 import type { MediaInfo } from '@shared/types'
 
@@ -97,6 +102,49 @@ function fmt(sec: number): string {
   const s = Math.floor(sec % 60)
   return m + ':' + String(s).padStart(2, '0')
 }
+
+const isDragging   = ref(false)
+const dragPct      = ref(0)   // 0~100
+let   _dragBarRect: DOMRect | null = null
+
+const displayPct = computed(() =>
+  isDragging.value ? dragPct.value : progressPct.value
+)
+
+function onProgressMousedown(e: MouseEvent): void {
+  if (safeDur.value <= 0) return
+  e.preventDefault()
+  _dragBarRect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  isDragging.value = true
+  dragPct.value = clampPct(e, _dragBarRect)
+  window.addEventListener('mousemove', onDragMove)
+  window.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(e: MouseEvent): void {
+  if (!_dragBarRect) return
+  dragPct.value = clampPct(e, _dragBarRect)
+}
+
+function onDragEnd(e: MouseEvent): void {
+  if (!_dragBarRect) return
+  const pct = clampPct(e, _dragBarRect)
+  dragPct.value = pct
+  isDragging.value = false
+  _dragBarRect = null
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
+  window.electron.mediaSeek((pct / 100) * safeDur.value)
+}
+
+function clampPct(e: MouseEvent, rect: DOMRect): number {
+  return Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
+}
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onDragMove)
+  window.removeEventListener('mouseup', onDragEnd)
+})
 
 function ctrl(action: 'prev' | 'next' | 'toggle'): void {
   window.electron.mediaControl(action)
@@ -224,16 +272,36 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
   margin-top: 2px;
 }
 .progress-bar {
-  height: 3px;
+  height: 4px;
   border-radius: 99px;
   background: rgba(255,255,255,0.12);
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  cursor: pointer;
 }
+.progress-bar.dragging { opacity: 0.9; }
 .progress-fill {
   height: 100%;
   border-radius: 99px;
   background: var(--md-sys-color-primary, #d0bcff);
   transition: width 0.5s linear;
+  pointer-events: none;
+}
+.progress-bar.dragging .progress-fill { transition: none; }
+.progress-thumb {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--md-sys-color-primary, #d0bcff);
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.15s;
+  pointer-events: none;
+}
+.progress-bar:hover .progress-thumb,
+.progress-bar.dragging .progress-thumb {
+  transform: translate(-50%, -50%) scale(1);
 }
 .time-row {
   display: flex;

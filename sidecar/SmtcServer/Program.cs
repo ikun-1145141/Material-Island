@@ -31,6 +31,16 @@ _ = Task.Run(async () =>
             case "prev":   await session.TrySkipPreviousAsync();    break;
             case "next":   await session.TrySkipNextAsync();        break;
             case "toggle": await session.TryTogglePlayPauseAsync(); break;
+            default:
+                if (line.StartsWith("seek:") && double.TryParse(
+                        line.AsSpan(5), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var secs))
+                {
+                    // SMTC 使用 100 纳秒单位（TimeSpan ticks）
+                    var ticks = (long)(secs * 10_000_000);
+                    await session.TryChangePlaybackPositionAsync(ticks);
+                }
+                break;
         }
     }
 });

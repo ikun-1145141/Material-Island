@@ -2,27 +2,51 @@ import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { request } from 'http'
+import type { AppSettings } from '../shared/types'
 
-// 岛的最大尺寸，窗口固定为此大小，视觉内容在内部动画
-const ISLAND_MAX_WIDTH = 440
-const ISLAND_MAX_HEIGHT = 180
-const ISLAND_TOP_OFFSET = 0 // 贴近屏幕顶部
+// 岛的最大尺寸
+export const ISLAND_MAX_WIDTH  = 440
+export const ISLAND_MAX_HEIGHT = 180
+
+/**
+ * 展开时将窗口扩展到全屏（捕获岛外点击），收起时恢复小窗口
+ */
+export function setIslandExpanded(win: BrowserWindow, expanded: boolean, settings: { topOffset: number; displayId: number; scale: number }): void {
+  const displays = screen.getAllDisplays()
+  const display = displays.find((d) => d.id === settings.displayId) ?? screen.getPrimaryDisplay()
+  const { x: dx, y: dy, width: dw, height: dh } = display.bounds
+
+  if (expanded) {
+    // 全屏覆盖，使背景区域点击可被捕获
+    win.setBounds({ x: dx, y: dy, width: dw, height: dh })
+  } else {
+    // 恢复小窗口
+    const scaledW = Math.round(ISLAND_MAX_WIDTH  * settings.scale)
+    const scaledH = Math.round(ISLAND_MAX_HEIGHT * settings.scale)
+    win.setBounds({
+      x: dx + Math.round(dw / 2 - scaledW / 2),
+      y: dy + settings.topOffset,
+      width:  scaledW,
+      height: scaledH,
+    })
+  }
+}
 
 export function createIslandWindow(): BrowserWindow {
-  const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize
+  const display = screen.getPrimaryDisplay()
+  const { width: sw } = display.bounds
 
   const win = new BrowserWindow({
     width: ISLAND_MAX_WIDTH,
     height: ISLAND_MAX_HEIGHT,
-    x: Math.round(screenWidth / 2 - ISLAND_MAX_WIDTH / 2),
-    y: ISLAND_TOP_OFFSET,
+    x: Math.round(sw / 2 - ISLAND_MAX_WIDTH / 2),
+    y: 0,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
-    // focusable: false 确保岛不抢占其他窗口焦点
     focusable: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -32,17 +56,50 @@ export function createIslandWindow(): BrowserWindow {
     },
   })
 
-  // screen-saver 级别确保在全屏应用上方仍可见
   win.setAlwaysOnTop(true, 'screen-saver')
-
-  // 默认穿透鼠标 — forward:true 保证 mousemove 事件仍能到达渲染层
-  // 渲染层检测到鼠标进入岛区域后，通过 IPC 关闭穿透
   win.setIgnoreMouseEvents(true, { forward: true })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     loadDevUrl(win, process.env['ELECTRON_RENDERER_URL'])
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+
+  return win
+}
+
+export function applySettingsToIsland(win: BrowserWindow, settings: AppSettings): void {
+  // 设置变更时始终按收起状态设置窗口大小
+  setIslandExpanded(win, false, settings)
+}
+
+export function createSettingsWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 520,
+    height: 500,
+    minWidth: 420,
+    minHeight: 420,
+    frame: false,
+    transparent: false,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    resizable: true,
+    show: false,
+    backgroundColor: '#1c1b1f',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+
+  win.once('ready-to-show', () => win.show())
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#settings')
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'settings' })
   }
 
   return win

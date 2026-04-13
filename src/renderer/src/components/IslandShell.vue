@@ -37,9 +37,12 @@ const componentMap: Record<IslandMode, Component> = {
 const activeComponent = computed(() => componentMap[store.mode])
 
 // 尺寸绑定：CSS transition 负责动画，此处只给目标值
+// scale 通过 CSS var --island-scale 控制，由 island store 写入
 const shellStyle = computed(() => ({
-  width:  `${store.islandSize.width}px`,
-  height: `${store.islandSize.height}px`,
+  width:     `${store.islandSize.width}px`,
+  height:    `${store.islandSize.height}px`,
+  transform: `scale(var(--island-scale, 1))`,
+  transformOrigin: 'top center',
 }))
 </script>
 

@@ -1,24 +1,30 @@
-import { app, ipcMain, BrowserWindow } from 'electron'
-import { createIslandWindow } from './window'
+import { app, ipcMain, BrowserWindow, screen } from 'electron'
+import { createIslandWindow, createSettingsWindow, applySettingsToIsland, setIslandExpanded, ISLAND_MAX_WIDTH, ISLAND_MAX_HEIGHT } from './window'
+import { createTray } from './tray'
+import { loadSettings, saveSettings } from './settings-store'
 import { mediaProvider } from './providers/media'
 import { notifyProvider } from './providers/notify'
 import { IPC } from '../shared/types'
+import type { AppSettings } from '../shared/types'
 
 let win: BrowserWindow
+let settingsWin: BrowserWindow | null = null
+let currentSettings: AppSettings
 
 // ── 应用生命周期 ───────────────────────────────────────────
 
 app.whenReady().then(() => {
+  currentSettings = loadSettings()
   win = createIslandWindow()
+  applySettingsToIsland(win, currentSettings)
+
+  createTray(openSettings)
   registerIpcHandlers()
   startProviders()
 
   // Windows：单实例锁
   app.on('second-instance', () => {
-    if (win) {
-      win.show()
-      win.focus()
-    }
+    openSettings()
   })
 })
 
@@ -27,34 +33,88 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
+// ── 设置窗口 ───────────────────────────────────────────────
+
+function openSettings(): void {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.focus()
+    return
+  }
+  settingsWin = createSettingsWindow()
+  settingsWin.on('closed', () => { settingsWin = null })
+}
+
 // ── IPC 注册 ───────────────────────────────────────────────
 
 function registerIpcHandlers(): void {
-  // 渲染层控制指令（上一首/下一首/暂停）转发到 sidecar
   ipcMain.on(IPC.MEDIA_CONTROL, (_, action: string) => {
     if (['prev', 'next', 'toggle'].includes(action)) {
       mediaProvider.sendControl(action as 'prev' | 'next' | 'toggle')
     }
   })
 
-  // 渲染层请求切换鼠标穿透状态
+  ipcMain.on(IPC.MEDIA_SEEK, (_, seconds: number) => {
+    const s = Number(seconds)
+    if (isFinite(s) && s >= 0) mediaProvider.sendSeek(s)
+  })
+
   ipcMain.on(IPC.ISLAND_CLICKTHROUGH, (_, enable: boolean) => {
     win?.setIgnoreMouseEvents(enable, { forward: true })
   })
 
-  // 渲染层申请 pin：临时使窗口可聚焦并获取焦点
-  // 当其他窗口获得焦点时 blur 事件会触发，送出 ISLAND_BLUR 通知渲染层自动解除 pin
+  // 岛展开/收起时调整窗口大小
+  ipcMain.on(IPC.ISLAND_EXPANDED, (_, expanded: boolean) => {
+    if (!win) return
+    setIslandExpanded(win, expanded, currentSettings)
+    // 展开时禁止穿透，收起时恢复穿透
+    win.setIgnoreMouseEvents(!expanded, { forward: true })
+  })
+
+  // 记录最近一次 pin 的时间戳，blur 防抗用：
+  // Windows 透明窗口 focus 后就立即 blur 是已知 quirk
+  let _lastPinTime = 0
+
   ipcMain.on(IPC.ISLAND_PIN, () => {
     if (!win) return
+    _lastPinTime = Date.now()
     win.setFocusable(true)
     win.focus()
   })
 
   win.on('blur', () => {
     if (!win) return
-    // 恢复不可聚焦，否则窗口会抢占任务栏焦点
     win.setFocusable(false)
+    // 如果 pin 后 500ms 内就收到 blur，认为是 Window quirk，忽略
+    if (Date.now() - _lastPinTime < 500) return
     win.webContents.send(IPC.ISLAND_BLUR)
+  })
+
+  // 设置页打开指令（渲染层发出）
+  ipcMain.on(IPC.SETTINGS_OPEN, () => openSettings())
+
+  // 渲染层读取当前设置
+  ipcMain.handle(IPC.SETTINGS_GET, () => {
+    // 附带可用显示器列表
+    const displays = screen.getAllDisplays().map((d) => ({
+      id: d.id,
+      label: `${d.size.width}×${d.size.height}${d.id === screen.getPrimaryDisplay().id ? ' (主屏)' : ''}`,
+    }))
+    return { settings: currentSettings, displays }
+  })
+
+  // 渲染层提交新设置
+  ipcMain.on(IPC.SETTINGS_SET, (_, next: AppSettings) => {
+    // 基本校验
+    const validated: AppSettings = {
+      scale:     Math.min(2.0, Math.max(0.5, Number(next.scale)     || 1.0)),
+      topOffset: Math.min(200, Math.max(0,   Math.round(Number(next.topOffset) || 0))),
+      displayId: Number(next.displayId) || -1,
+    }
+    currentSettings = validated
+    saveSettings(validated)
+    applySettingsToIsland(win, validated)
+    // 通知 island 渲染层更新 CSS 缩放
+    win.webContents.send(IPC.SETTINGS_CHANGED, validated)
   })
 }
 

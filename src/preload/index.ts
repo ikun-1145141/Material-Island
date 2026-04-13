@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MediaInfo, NoticeInfo, MediaPosition } from '../shared/types'
+import type { MediaInfo, NoticeInfo, MediaPosition, AppSettings } from '../shared/types'
 import { IPC } from '../shared/types'
 
 // 严格最小接口原则：只暴露渲染层实际需要的方法
@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('electron', {
   setClickThrough: (enable: boolean): void => {
     if (typeof enable !== 'boolean') return
     ipcRenderer.send(IPC.ISLAND_CLICKTHROUGH, enable)
+  },
+
+  /** 通知主进程岛展开/收起，主进程调整窗口大小和穿透状态 */
+  setIslandExpanded: (expanded: boolean): void => {
+    ipcRenderer.send(IPC.ISLAND_EXPANDED, expanded)
   },
 
   /**
@@ -40,6 +45,11 @@ contextBridge.exposeInMainWorld('electron', {
   mediaControl: (action: 'prev' | 'next' | 'toggle'): void => {
     if (!['prev', 'next', 'toggle'].includes(action)) return
     ipcRenderer.send(IPC.MEDIA_CONTROL, action)
+  },
+
+  mediaSeek: (seconds: number): void => {
+    if (typeof seconds === 'number' && isFinite(seconds) && seconds >= 0)
+      ipcRenderer.send(IPC.MEDIA_SEEK, seconds)
   },
 
   /**
@@ -70,5 +80,27 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = (_: Electron.IpcRendererEvent, notice: NoticeInfo): void => cb(notice)
     ipcRenderer.on(IPC.NOTIFY_NEW, handler)
     return () => ipcRenderer.off(IPC.NOTIFY_NEW, handler)
+  },
+
+  /** 打开设置窗口 */
+  openSettings: (): void => {
+    ipcRenderer.send(IPC.SETTINGS_OPEN)
+  },
+
+  /** 读取当前设置（含可用显示器列表） */
+  getSettings: (): Promise<{ settings: AppSettings; displays: { id: number; label: string }[] }> => {
+    return ipcRenderer.invoke(IPC.SETTINGS_GET)
+  },
+
+  /** 提交新设置 */
+  setSettings: (settings: AppSettings): void => {
+    ipcRenderer.send(IPC.SETTINGS_SET, settings)
+  },
+
+  /** 订阅设置变更（主进程应用后推送给 island 渲染层） */
+  onSettingsChanged: (cb: (s: AppSettings) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, s: AppSettings): void => cb(s)
+    ipcRenderer.on(IPC.SETTINGS_CHANGED, handler)
+    return () => ipcRenderer.off(IPC.SETTINGS_CHANGED, handler)
   },
 })

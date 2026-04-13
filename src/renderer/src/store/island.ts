@@ -68,13 +68,13 @@ export const useIslandStore = defineStore('island', () => {
   /** 点击切换展开/收起 */
   function togglePin(): void {
     if (isExpanded.value) {
-      // 已展开 → 收起
       isExpanded.value = false
       isPinned.value   = false
+      window.electron.setIslandExpanded(false)
     } else {
-      // 未展开 → 展开（不需要 Electron 焦点，避免 blur 立即触发收起）
       isExpanded.value = true
       isPinned.value   = true
+      window.electron.setIslandExpanded(true)
     }
   }
 
@@ -134,15 +134,24 @@ export const useIslandStore = defineStore('island', () => {
       duration.value = pos.duration
     })
     const offNotice = window.electron.onNotification(applyNotification)
-    // 窗口失焦点 → 解除 pin，不直接操作 isExpanded（避免连续两次展开后立即护展开）
     const offBlur   = window.electron.onWindowBlur(() => {
-      isPinned.value = false
+      // blur 作为保底兜底，主要靠 App.vue 背景点击收起
+      isPinned.value   = false
+      isExpanded.value = false
+    })
+    const offSettings = window.electron.onSettingsChanged((s) => {
+      document.documentElement.style.setProperty('--island-scale', String(s.scale))
+    })
+    // 初始读取设置，同步一次 CSS 变量
+    window.electron.getSettings().then(({ settings }) => {
+      document.documentElement.style.setProperty('--island-scale', String(settings.scale))
     })
     return () => {
       offMedia()
       offPosition()
       offNotice()
       offBlur()
+      offSettings()
       if (_noticeTimer) clearTimeout(_noticeTimer)
       if (_mediaResetTimer) clearTimeout(_mediaResetTimer)
     }

@@ -37,6 +37,19 @@ export interface ResizePayload {
   height: number
 }
 
+// ── 应用设置 ──────────────────────────────────────────────
+export interface AppSettings {
+  scale: number          // 岛的缩放倍数，0.5~2.0，默认 1.0
+  topOffset: number      // 距屏幕顶部偏移像素，默认 0
+  displayId: number      // 显示器 ID，-1 表示主屏
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  scale: 1.0,
+  topOffset: 0,
+  displayId: -1,
+}
+
 // ── IPC 频道名称常量（避免魔法字符串）────────────────────
 export const IPC = {
   ISLAND_RESIZE:        'island:resize',
@@ -46,5 +59,11 @@ export const IPC = {
   MEDIA_UPDATE:         'media:update',
   MEDIA_POSITION:       'media:position',
   MEDIA_CONTROL:        'media:control',
+  MEDIA_SEEK:           'media:seek',
   NOTIFY_NEW:           'notify:new',
+  ISLAND_EXPANDED:      'island:expanded',
+  SETTINGS_OPEN:        'settings:open',
+  SETTINGS_GET:         'settings:get',
+  SETTINGS_SET:         'settings:set',
+  SETTINGS_CHANGED:     'settings:changed',
 } as const

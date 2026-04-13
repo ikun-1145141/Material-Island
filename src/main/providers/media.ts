@@ -144,10 +144,17 @@ class MediaProvider extends EventEmitter {
     return `data:${mime};base64,${b64}`
   }
 
-  /** 向 C# sidecar 发送控制命令（每行一条） */
+  /** 向 C# sidecar 发送控制命令 */
   sendControl(action: 'prev' | 'next' | 'toggle'): void {
     if (this._proc?.stdin?.writable) {
       this._proc.stdin.write(action + '\n')
+    }
+  }
+
+  /** 向 C# sidecar 发送 seek 指令（秒） */
+  sendSeek(seconds: number): void {
+    if (this._proc?.stdin?.writable) {
+      this._proc.stdin.write(`seek:${seconds}\n`)
     }
   }
 

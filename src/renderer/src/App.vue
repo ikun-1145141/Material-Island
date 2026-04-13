@@ -1,26 +1,42 @@
 <template>
-  <!-- 透明全覆盖容器，pointer-events:none 让鼠标事件落到桌面 -->
-  <!-- IslandShell 内部再设 pointer-events:auto，只在岛上拦截事件 -->
-  <div class="app-root">
+  <!-- 设置页面 -->
+  <Settings v-if="isSettings" />
+
+  <!-- 岛主界面：透明全覆盖容器 -->
+  <!-- 展开时不穿透，mousedown.self = 点中透明背景区域 → 收起 -->
+  <div
+    v-else
+    class="app-root"
+    :style="{ pointerEvents: store.isExpanded ? 'auto' : 'none' }"
+    @mousedown.self="onBackdrop"
+  >
     <IslandShell />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import IslandShell from './components/IslandShell.vue'
+import Settings from './components/Settings.vue'
 import { useIslandStore } from './store/island'
 import { useM3Theme } from './composables/useM3Theme'
 
-const store = useIslandStore()
+// 根据 URL hash 决定渲染哪个页面
+const isSettings = ref(window.location.hash === '#settings')
 
-// 应用 M3 动态配色（随系统深色模式自动切换）
+const store = useIslandStore()
 useM3Theme('#6750A4')
 
-// 初始化 IPC 订阅，组件卸载时自动清理
+// 点击岛外透明区域 → 收起
+function onBackdrop(): void {
+  if (store.isExpanded) store.togglePin()
+}
+
 let cleanup: (() => void) | undefined
 onMounted(() => {
-  cleanup = store.init()
+  if (!isSettings.value) {
+    cleanup = store.init()
+  }
 })
 onUnmounted(() => {
   cleanup?.()
@@ -66,7 +82,6 @@ body {
   justify-content: center;
   align-items: flex-start;
   padding-top: 8px;
-  /* 父容器穿透，只有岛本身拦截鼠标事件 */
-  pointer-events: none;
+  /* pointer-events 由 :style 动态控制，展开时 auto，收起时 none */
 }
 </style>
