@@ -9,6 +9,7 @@
 ![Vue 3](https://img.shields.io/badge/Vue-3.4+-4FC08D?style=flat-square&logo=vue.js&logoColor=white)
 ![Electron](https://img.shields.io/badge/Electron-30+-47848F?style=flat-square&logo=electron&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-.NET_8-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows_10%2B-0078D4?style=flat-square&logo=windows&logoColor=white)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-green?style=flat-square)
 
@@ -19,16 +20,19 @@
 ## 预览
 
 ```
-┌──────────────────────────────────────┐  ←  屏幕顶部
-│                                      │
-│         ╭─────────────────╮          │
-│         │   22:30:15      │          │  ← 紧凑态（时钟）
-│         ╰─────────────────╯          │
-│                                      │
-│    ╭───────────────────────────╮     │
-│    │  ♫  Daylight  · Taylor   ●│    │  ← 音乐态（展开）
-│    ╰───────────────────────────╯     │
-└──────────────────────────────────────┘
+屏幕顶部
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│              ╭──────────────╮                            │
+│              │  22:30:15    │   ← 紧凑态（时钟）         │
+│              ╰──────────────╯                            │
+│                                                          │
+│     ╭─────────────────────────────────────────────╮     │
+│     │  [封面]  Daylight · Taylor Swift             │     │
+│     │          ══════●══════════════  02:15/03:48  │     │  ← 音乐态（展开）
+│     │          ⏮  ⏸  ⏭    SPOTIFY                │     │
+│     ╰─────────────────────────────────────────────╯     │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## 功能
@@ -36,101 +40,126 @@
 | 状态 | 触发条件 | 说明 |
 |------|----------|------|
 | **紧凑** | 默认 | 显示系统时钟，悬停展开 |
-| **音乐** | 系统有媒体会话（SMTC）活跃 | 封面、歌曲名、艺术家、播放状态 |
+| **音乐** | 系统有媒体会话（SMTC）活跃 | 封面缩略图、歌曲、艺术家、播放源、进度条 |
 | **通知** | 收到系统通知 | 应用名、标题、正文，5 秒自动收回 |
 | **计时** | 手动激活 | 秒表，支持暂停 / 重置 |
 
-- 透明无边框窗口，始终置顶
+**音乐控制（展开态）：**
+- 上/下曲、播放/暂停
+- 拖拽进度条 seek 到任意位置
+- 专辑封面（58×58，从 SMTC 读取）
+- 播放来源应用名称标签
+
+**窗口行为：**
+- 透明无边框，始终置顶
 - 默认**鼠标穿透**，鼠标移入岛区域时自动恢复交互
-- M3 动态配色，跟随系统深色模式自动切换
-- M3 强调型弹出动画（`cubic-bezier(0.05, 0.7, 0.1, 1)`）
+- 点击岛锁定展开；展开时窗口扩展到全屏以捕获点击外部收起
+- 系统托盘图标，右键菜单（打开设置 / 退出）
+
+**设置：**
+- 岛的缩放倍数（0.5× ～ 2.0×）
+- 距屏幕顶部偏移量
+- 多显示器选择
 
 ## 技术栈
 
-- **框架**: Vue 3 + Composition API
-- **桌面容器**: Electron 30
-- **构建工具**: Vite 5 + electron-vite
-- **状态管理**: Pinia
-- **动效**: CSS Transition（M3 曲线） + `@vueuse/motion`
-- **工具库**: VueUse
-- **配色系统**: `@material/material-color-utilities`（Google 官方 M3 算法库）
-- **语言**: TypeScript 5（全量类型覆盖，零 `any`）
+| 层 | 技术 |
+|----|------|
+| **桌面容器** | Electron 30 |
+| **前端框架** | Vue 3.4 + Composition API |
+| **构建工具** | Vite 5 + electron-vite |
+| **状态管理** | Pinia |
+| **动效** | CSS Transition（M3 曲线）|
+| **工具库** | VueUse |
+| **配色系统** | `@material/material-color-utilities`（Google 官方 M3 算法）|
+| **语言** | TypeScript 5（全量类型覆盖，零 `any`）|
+| **SMTC sidecar** | C# / .NET 8 — `SmtcServer.exe`，读取 Windows 媒体会话 |
 
 ## 快速开始
 
-**系统要求**：Windows 10+，Node.js 20+
+**系统要求**：Windows 10 2004+（Build 19041+）、Node.js 20+、.NET 8 SDK
 
 ```bash
 # 克隆仓库
 git clone https://github.com/your-name/material-island.git
 cd material-island
 
-# 安装依赖
+# 安装 Node 依赖
 npm install
+
+# 编译 C# SMTC sidecar（首次或 sidecar 代码变更后需要）
+dotnet build sidecar/SmtcServer -c Release
 
 # 启动开发模式（支持热重载）
 npm run dev
 ```
 
-### 构建
+### 构建生产包
 
 ```bash
-# 编译并打包为 Windows 安装程序
 npm run build
 ```
 
-产物位于 `dist/` 目录。
+产物位于 `dist/`，electron-builder 会将 `SmtcServer.exe` 打包进 `resources/`。
 
 ## 目录结构
 
 ```
-src/
-├── shared/
-│   └── types.ts             # 跨层数据契约（MediaInfo、NoticeInfo、IPC 常量）
+Material-Island/
+├── sidecar/
+│   └── SmtcServer/          # C# .NET 8 SMTC 服务进程
+│       └── Program.cs       # 读取系统媒体会话，通过 stdout 推送 JSON
 │
-├── main/                    # Electron 主进程
-│   ├── index.ts             # 应用入口，注册 IPC
-│   ├── window.ts            # 透明置顶窗口工厂
-│   └── providers/
-│       ├── media.ts         # Windows SMTC 媒体信息轮询
-│       └── notify.ts        # 系统通知监听
-│
-├── preload/
-│   ├── index.ts             # contextBridge 安全桥接
-│   └── index.d.ts           # window.electron 全局类型
-│
-└── renderer/src/            # Vue 渲染层
-    ├── App.vue              # 根组件
-    ├── main.ts              # Vue 入口，注册 Pinia / Motion
-    ├── store/island.ts      # 岛状态机（IslandMode 枚举 + 尺寸计算）
-    ├── composables/
-    │   ├── useM3Theme.ts    # M3 动态配色
-    │   ├── useIslandMouse.ts# 鼠标进出 → 切换穿透 + 展开/收起
-    │   └── useWinBridge.ts  # 封装 window.electron.*
-    ├── components/
-    │   ├── IslandShell.vue  # 药丸容器（形状动画 + 动态组件切换）
-    │   ├── Compact.vue      # 时钟
-    │   ├── Music.vue        # 媒体播放
-    │   ├── Notification.vue # 系统通知
-    │   └── Timer.vue        # 秒表
-    └── styles/
-        ├── tokens.css       # M3 CSS 变量（颜色、形状、排印）
-        └── motion.css       # M3 动效时长与曲线变量
+└── src/
+    ├── shared/
+    │   └── types.ts         # 跨层数据契约（MediaInfo、IPC 常量、AppSettings）
+    │
+    ├── main/                # Electron 主进程
+    │   ├── index.ts         # 入口：窗口生命周期、IPC 注册、Provider 启动
+    │   ├── window.ts        # 窗口工厂：透明/置顶/无边框 + setIslandExpanded()
+    │   ├── tray.ts          # 系统托盘图标与右键菜单
+    │   ├── settings-store.ts# 设置持久化（electron-store）
+    │   └── providers/
+    │       ├── media.ts     # 启动/守护 SmtcServer sidecar，解析媒体事件
+    │       └── notify.ts    # 系统通知监听
+    │
+    ├── preload/
+    │   ├── index.ts         # contextBridge 安全桥接（最小接口原则）
+    │   └── index.d.ts       # window.electron 全局类型声明
+    │
+    └── renderer/src/        # Vue 渲染层
+        ├── App.vue          # 根组件：背景点击捕获、鼠标穿透联动
+        ├── main.ts          # Vue 入口，注册 Pinia
+        ├── store/
+        │   └── island.ts    # 岛状态机（IslandMode + IPC 订阅 + togglePin）
+        ├── composables/
+        │   ├── useM3Theme.ts    # M3 动态配色
+        │   └── useIslandMouse.ts# 鼠标进出检测
+        ├── components/
+        │   ├── IslandShell.vue  # 药丸容器（CSS 尺寸动画 + 动态组件）
+        │   ├── Compact.vue      # 紧凑态：时钟
+        │   ├── Music.vue        # 音乐态：封面/控制/拖拽进度条
+        │   ├── Notification.vue # 通知态
+        │   ├── Timer.vue        # 计时态：秒表
+        │   └── Settings.vue     # 设置页（独立窗口）
+        └── styles/
+            ├── tokens.css       # M3 CSS 变量（颜色、形状、排印）
+            └── motion.css       # M3 动效时长与曲线变量
 ```
 
-详细架构说明见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+详细架构设计见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 扩展新状态
 
-1. 在 `src/shared/types.ts` 中添加所需接口
-2. 在 `store/island.ts` 的 `IslandMode` 联合类型中添加新值，并在 `SIZE_MAP` 中配置尺寸
+1. 在 `src/shared/types.ts` 中添加所需数据接口
+2. 在 `store/island.ts` 的 `IslandMode` 联合类型和 `SIZE_MAP` 中添加新条目
 3. 新建 `components/YourView.vue`
 4. 在 `IslandShell.vue` 的 `componentMap` 中注册
-5. 在 `store/island.ts` 中添加触发 action
+5. 在 `store/island.ts` 中添加触发该状态的 action
 
 ## 配色自定义
 
-在 `App.vue` 中修改品牌色（十六进制），M3 算法会自动生成完整的 Primary / Secondary / Surface 色板：
+在 `App.vue` 中修改品牌色（十六进制），M3 算法自动生成完整色板：
 
 ```ts
 useM3Theme('#6750A4')  // 改成你的品牌色

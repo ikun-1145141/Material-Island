@@ -1,7 +1,7 @@
 # Material Island — 架构文档
 
-> **技术栈**: Vue 3 + TypeScript + Vite + Electron  
-> **设计语言**: Material Design 3 (Material You)  
+> **技术栈**: Vue 3 + TypeScript + Vite + Electron + C# (.NET 8)
+> **设计语言**: Material Design 3 (Material You)
 > **灵感来源**: Apple Dynamic Island
 
 ---
@@ -13,33 +13,40 @@
 3. [目录结构](#3-目录结构)
 4. [架构分层](#4-架构分层)
 5. [核心模块设计](#5-核心模块设计)
-   - 5.1 [Electron 主进程](#51-electron-主进程)
-   - 5.2 [Preload 桥接层](#52-preload-桥接层)
-   - 5.3 [岛状态机 (Pinia Store)](#53-岛状态机-pinia-store)
-   - 5.4 [UI 组件层](#54-ui-组件层)
-   - 5.5 [动效系统](#55-动效系统)
-   - 5.6 [M3 主题系统](#56-m3-主题系统)
-6. [模块化设计](#6-模块化设计)
-7. [数据流](#7-数据流)
-8. [扩展指南](#8-扩展指南)
-9. [启动与构建](#9-启动与构建)
+   - 5.1 [C# SMTC Sidecar](#51-c-smtc-sidecar)
+   - 5.2 [Electron 主进程](#52-electron-主进程)
+   - 5.3 [Preload 桥接层](#53-preload-桥接层)
+   - 5.4 [岛状态机 Pinia Store](#54-岛状态机-pinia-store)
+   - 5.5 [UI 组件层](#55-ui-组件层)
+   - 5.6 [动效系统](#56-动效系统)
+   - 5.7 [M3 主题系统](#57-m3-主题系统)
+6. [IPC 频道一览](#6-ipc-频道一览)
+7. [窗口管理策略](#7-窗口管理策略)
+8. [模块化设计](#8-模块化设计)
+9. [数据流](#9-数据流)
+10. [扩展指南](#10-扩展指南)
+11. [启动与构建](#11-启动与构建)
 
 ---
 
 ## 1. 项目概述
 
-Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通知中枢**，基于 Electron 实现无边框透明窗口，利用 Vue 3 的响应式系统驱动岛的状态切换动画，全程遵循 Material Design 3 规范。
+Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通知/媒体控制中枢**，基于 Electron 实现无边框透明覆盖窗口，以 C# sidecar 进程读取 Windows SMTC 系统媒体会话，通过 Vue 3 响应式系统驱动岛的状态切换，全程遵循 Material Design 3 规范。
 
 **核心能力：**
 
 | 能力 | 实现方式 |
 |------|----------|
-| 透明置顶窗口 | Electron `BrowserWindow` 透明 + 始终置顶 |
-| 点击穿透 | `win.setIgnoreMouseEvents()` 动态切换 |
-| 状态驱动 UI | Pinia 状态机 + Vue `<Transition>` |
-| 弹簧动画 | `@vueuse/motion` Spring 曲线 |
-| 系统信息获取 | Electron IPC + Node.js 原生 API |
-| M3 动态配色 | CSS Custom Properties + `useDynamicColor` |
+| 透明置顶覆盖窗口 | Electron `BrowserWindow` 透明 + `alwaysOnTop: screen-saver` |
+| 鼠标穿透 | `win.setIgnoreMouseEvents(true, { forward: true })` 动态切换 |
+| 展开时捕获全屏点击 | 展开时将窗口 `setBounds` 拉伸至全屏，关闭穿透；收起恢复小窗口 |
+| 状态驱动 UI | Pinia 状态机 + CSS Transition |
+| 系统媒体信息 | C# SmtcServer sidecar 读取 Windows.Media.Control SMTC API |
+| 高频进度更新 | sidecar 独立 position 事件流，减少完整 MediaInfo 解析开销 |
+| 进度 seek | 渲染层拖拽 → IPC → sidecar stdin `seek:N` 命令 |
+| 持久化设置 | electron-store，JSON 文件落地 |
+| 系统托盘 | Electron `Tray`，右键菜单 + 双击打开设置 |
+| M3 动态配色 | CSS Custom Properties + `@material/material-color-utilities` |
 
 ---
 
@@ -48,24 +55,24 @@ Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通
 ```
 运行时
 ├── Electron 30+          # Windows 桌面容器，管理窗口生命周期
-├── Node.js 20+           # 主进程运行环境
+└── Node.js 20+           # 主进程运行环境
+
+原生组件
+└── C# / .NET 8           # SmtcServer sidecar：读取 SMTC 系统媒体会话
 
 渲染层
 ├── Vue 3.4+              # Composition API，响应式 UI 框架
-├── TypeScript 5+         # 全量类型覆盖
+├── TypeScript 5+         # 全量类型覆盖，零 any
 ├── Vite 5+               # 极速构建与 HMR
 └── electron-vite         # Electron 专用 Vite 封装
 
 状态与逻辑
 ├── Pinia 2+              # 岛状态机（当前模式、是否展开等）
-└── VueUse                # useMouseInElement / useSpring 等工具集
-
-动效
-└── @vueuse/motion        # Spring 弹簧动画，语法同 Framer Motion
+└── VueUse                # useMouseInElement 等工具集
 
 M3 设计系统
-├── material-color-utilities   # Google 官方 M3 配色算法库
-└── 自定义 CSS Token 系统       # --md-sys-color-* 变量
+├── @material/material-color-utilities  # Google 官方 M3 配色算法
+└── 自定义 CSS Token 系统              # --md-sys-color-* 变量
 ```
 
 ---
@@ -76,45 +83,52 @@ M3 设计系统
 Material-Island/
 ├── electron.vite.config.ts      # electron-vite 总配置
 ├── package.json
-├── tsconfig.json
+├── tsconfig.json                # 基础 TS 配置
+├── tsconfig.node.json           # 主进程 / preload 配置
+├── tsconfig.web.json            # 渲染层配置
+├── resources/
+│   └── music_cast.png           # 系统托盘图标
 │
-├── src/
-│   ├── main/                    # ── Electron 主进程 ──
-│   │   ├── index.ts             # 入口：创建窗口、注册 IPC handler
-│   │   ├── window.ts            # 窗口工厂：透明、置顶、无边框配置
-│   │   └── providers/           # 系统数据提供者
-│   │       ├── media.ts         # 获取当前播放媒体 (Windows: SMTC)
-│   │       └── notify.ts        # 系统通知监听
-│   │
-│   ├── preload/                 # ── IPC 桥接层 ──
-│   │   └── index.ts             # contextBridge 暴露安全 API
-│   │
-│   └── renderer/                # ── Vue 渲染层 ──
-│       ├── index.html
-│       └── src/
-│           ├── main.ts          # Vue 应用入口，注册 Pinia / Router
-│           ├── App.vue          # 岛的外壳容器，处理形状动画
-│           │
-│           ├── components/      # 岛的各状态组件
-│           │   ├── IslandShell.vue   # 药丸容器（控制宽高伸缩）
-│           │   ├── Compact.vue       # 紧凑态：默认时间/图标
-│           │   ├── Music.vue         # 音乐播放控制
-│           │   ├── Notification.vue  # 系统通知
-│           │   └── Timer.vue         # 计时/倒计时
-│           │
-│           ├── composables/     # 可复用逻辑 (hooks)
-│           │   ├── useM3Theme.ts     # M3 动态配色
-│           │   ├── useIslandMouse.ts # 鼠标悬停 → 切换穿透
-│           │   └── useWinBridge.ts   # 封装 window.electron API
-│           │
-│           ├── store/
-│           │   └── island.ts    # Pinia：岛的核心状态机
-│           │
-│           ├── styles/
-│           │   ├── tokens.css   # M3 CSS 变量（颜色、形状、排印）
-│           │   └── motion.css   # 全局过渡时长变量
-│           │
-│           └── assets/          # M3 图标 / 静态资源
+├── sidecar/
+│   └── SmtcServer/              # C# .NET 8 sidecar 项目
+│       ├── SmtcServer.csproj
+│       └── Program.cs           # SMTC 读取、进度推送、seek 命令处理
+│
+└── src/
+    ├── shared/
+    │   └── types.ts             # 跨层类型契约（MediaInfo、IPC 常量、AppSettings）
+    │
+    ├── main/                    # ── Electron 主进程 ──
+    │   ├── index.ts             # 入口：窗口生命周期、IPC 注册、Provider 启动
+    │   ├── window.ts            # 窗口工厂 + setIslandExpanded()
+    │   ├── tray.ts              # 系统托盘图标与右键菜单
+    │   ├── settings-store.ts    # 设置读写（electron-store）
+    │   └── providers/
+    │       ├── media.ts         # 启动/守护 SmtcServer，解析媒体事件
+    │       └── notify.ts        # 系统通知监听
+    │
+    ├── preload/
+    │   ├── index.ts             # contextBridge 安全桥接
+    │   └── index.d.ts           # window.electron 全局类型声明
+    │
+    └── renderer/src/            # ── Vue 渲染层 ──
+        ├── App.vue              # 根组件：背景点击收起 + 动态 pointer-events
+        ├── main.ts              # Vue 入口，注册 Pinia
+        ├── store/
+        │   └── island.ts        # 岛状态机（IslandMode + IPC 订阅）
+        ├── composables/
+        │   ├── useM3Theme.ts    # M3 动态配色
+        │   └── useIslandMouse.ts# 鼠标进出检测
+        ├── components/
+        │   ├── IslandShell.vue  # 药丸容器（CSS 尺寸动画 + 动态组件）
+        │   ├── Compact.vue      # 紧凑态：时钟
+        │   ├── Music.vue        # 音乐态：封面/控制/拖拽进度条
+        │   ├── Notification.vue # 通知态
+        │   ├── Timer.vue        # 计时态：秒表
+        │   └── Settings.vue     # 设置页（独立窗口）
+        └── styles/
+            ├── tokens.css       # M3 CSS 变量（颜色、形状、排印）
+            └── motion.css       # 全局过渡时长与曲线变量
 ```
 
 ---
@@ -122,291 +136,343 @@ Material-Island/
 ## 4. 架构分层
 
 ```
-┌─────────────────────────────────────────────┐
-│              操作系统 / 系统 API              │
-│    (媒体会话 SMTC / 通知中心 / 文件系统)      │
-└────────────────────┬────────────────────────┘
-                     │ Node.js API
-┌────────────────────▼────────────────────────┐
-│              Electron 主进程                  │
-│  window.ts  ·  providers/*  ·  IPC handler  │
-└────────────────────┬────────────────────────┘
-                     │ contextBridge (安全隔离)
-┌────────────────────▼────────────────────────┐
-│                  Preload                     │
-│          window.electron.* API              │
-└────────────────────┬────────────────────────┘
-                     │ 调用
-┌────────────────────▼────────────────────────┐
-│           Vue 渲染层 (Renderer)              │
-│                                             │
-│  composables  →  Pinia Store  →  Components │
-│  (副作用/IO)     (状态机)        (纯展示层)   │
-└─────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                     操作系统 / 系统 API                         │
+│   Windows.Media.Control (SMTC)  ·  通知中心  ·  文件系统       │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ Win32 / WinRT API
+┌──────────────────────────▼─────────────────────────────────────┐
+│                   C# SmtcServer Sidecar                         │
+│  读取媒体会话元数据/进度  ·  接收 seek 命令  ·  stdout JSON 流  │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ spawn + stdio pipe
+┌──────────────────────────▼─────────────────────────────────────┐
+│                    Electron 主进程                               │
+│   window.ts  ·  tray.ts  ·  providers/*  ·  IPC handler        │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ contextBridge（安全隔离）
+┌──────────────────────────▼─────────────────────────────────────┐
+│                        Preload                                   │
+│                  window.electron.* API                          │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ 调用
+┌──────────────────────────▼─────────────────────────────────────┐
+│                  Vue 渲染层 (Renderer)                           │
+│                                                                 │
+│   composables  →  Pinia Store  →  Components                   │
+│   (副作用/IO)     (状态机)        (纯展示层)                     │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 **设计原则：**
 
-- **单向数据流**：系统事件 → Pinia → 组件，禁止组件直接调用 IPC
-- **主进程零 UI 逻辑**：渲染层不感知 Electron，仅通过 `composables/useWinBridge` 间接调用
+- **单向数据流**：系统事件 → Provider → IPC → Pinia → 组件，禁止组件直接调用 IPC
+- **主进程零 UI 逻辑**：渲染层不感知 Electron，仅通过 `window.electron.*` 间接调用
 - **状态机驱动 UI**：岛的形态由 `island.ts` 中枚举状态决定，组件只负责渲染
+- **sidecar 进程隔离**：C# 进程崩溃不影响 Electron 主进程，`media.ts` 自动 5s 重启
 
 ---
 
 ## 5. 核心模块设计
 
-### 5.1 Electron 主进程
+### 5.1 C# SMTC Sidecar
+
+**`sidecar/SmtcServer/Program.cs`**
+
+SmtcServer 是独立的 .NET 8 控制台进程，通过
+`Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager`
+读取当前系统媒体会话，将媒体信息以 JSON 行（`\n` 分隔）写入 stdout，并从 stdin 读取控制命令。
+
+**stdout 输出格式：**
+
+```json
+// 完整媒体信息更新（元数据或状态变化时推送）
+{"type":"update","title":"Daylight","artist":"Taylor Swift","album":"1989","status":"Playing","thumbnail":"data:image/png;base64,...","position":134.5,"duration":228.0,"source":"Spotify"}
+
+// 高频进度更新（独立事件，每秒推送）
+{"type":"position","position":135.2,"duration":228.0}
+```
+
+**stdin 控制命令：**
+
+```
+toggle\n       # 播放/暂停
+prev\n         # 上一曲
+next\n         # 下一曲
+seek:134.5\n   # seek 到 134.5 秒
+```
+
+**关键实现细节：**
+
+- seek 调用 `TryChangePlaybackPositionAsync(seconds * 10_000_000)`（WinRT 使用 100ns ticks）
+- duration 优先取 `MaxSeekTime`，为 0 时用 `EndTime`，仍为 0 则用 `TimeSpan.MaxValue` 兜底
+- elapsed 插值上限 3600s，避免 `TimeSpan.MinValue` 导致溢出
+- 位置和时长同时为 0 时跳过推送
+
+**`src/main/providers/media.ts`** — sidecar 守护器
+
+```
+MediaProvider (extends EventEmitter)
+├── start()         → spawn SmtcServer.exe，建立 stdio 管道
+├── stop()          → 杀进程，清除重启定时器
+├── sendControl()   → 向 sidecar stdin 写控制命令
+├── sendSeek()      → 向 sidecar stdin 写 seek:N 命令
+└── _spawn() 内部   → readline 解析 stdout JSON 行
+                      → emit('update', MediaInfo)
+                      → emit('position', MediaPosition)
+                      → 异常退出时 5s 后自动重启
+```
+
+sidecar 路径解析：开发模式优先查找 Release 编译输出，生产模式从 `process.resourcesPath/SmtcServer.exe` 读取。
+
+---
+
+### 5.2 Electron 主进程
 
 **`src/main/window.ts`** — 窗口工厂
 
 ```typescript
-import { BrowserWindow, screen } from 'electron'
+export const ISLAND_MAX_WIDTH  = 440
+export const ISLAND_MAX_HEIGHT = 180
 
 export function createIslandWindow(): BrowserWindow {
-  const { width } = screen.getPrimaryDisplay().workAreaSize
-
   const win = new BrowserWindow({
-    width: 240,
-    height: 40,
-    x: Math.round(width / 2 - 120),
-    y: 8,                          // 屏幕顶部，模拟刘海区域
+    width: ISLAND_MAX_WIDTH,
+    height: ISLAND_MAX_HEIGHT,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
-    hasShadow: false,
+    focusable: false,      // 默认不可聚焦，避免抢夺用户焦点
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      nodeIntegration: false,      // 安全：禁止渲染层直接用 Node
+      nodeIntegration: false,
     },
   })
-
-  // 默认穿透鼠标点击（桌面其他操作不受影响）
-  win.setIgnoreMouseEvents(true, { forward: true })
-
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setIgnoreMouseEvents(true, { forward: true })  // 默认穿透
   return win
 }
 ```
 
-**`src/main/index.ts`** — IPC 注册
+**`setIslandExpanded(win, expanded, settings)`** — 展开/收起时调整窗口尺寸：
 
 ```typescript
-// 渲染层通知主进程切换穿透状态
-ipcMain.on('island:set-clickthrough', (_, enable: boolean) => {
-  win.setIgnoreMouseEvents(enable, { forward: true })
-})
-
-// 媒体信息推送（主进程 → 渲染层）
-mediaProvider.on('update', (info) => {
-  win.webContents.send('media:update', info)
-})
+if (expanded) {
+  // 全屏覆盖，捕获岛外任意位置的点击事件
+  win.setBounds({ x: dx, y: dy, width: dw, height: dh })
+} else {
+  // 恢复小窗口（440×180 × scale），居中于屏幕顶部
+  win.setBounds({
+    x: dx + Math.round(dw / 2 - scaledW / 2),
+    y: dy + settings.topOffset,
+    width: scaledW,
+    height: scaledH,
+  })
+}
 ```
+
+**`src/main/tray.ts`** — 系统托盘
+
+- 图标：`resources/music_cast.png`
+- 右键菜单：「打开设置」「退出」
+- 双击：打开设置窗口
+
+**`src/main/settings-store.ts`** — 设置持久化
+
+使用 electron-store 将 `AppSettings` 序列化为 JSON，提供 `loadSettings()` / `saveSettings(settings)` 接口。
 
 ---
 
-### 5.2 Preload 桥接层
+### 5.3 Preload 桥接层
 
-**`src/preload/index.ts`**
+遵循最小接口原则，所有参数经过类型校验后才调用 ipcRenderer。
 
-```typescript
-import { contextBridge, ipcRenderer } from 'electron'
-
-contextBridge.exposeInMainWorld('electron', {
-  // 渲染层 → 主进程
-  setClickThrough: (enable: boolean) =>
-    ipcRenderer.send('island:set-clickthrough', enable),
-
-  // 主进程 → 渲染层（事件订阅）
-  onMediaUpdate: (cb: (info: MediaInfo) => void) =>
-    ipcRenderer.on('media:update', (_, data) => cb(data)),
-
-  onNotification: (cb: (notice: NoticeInfo) => void) =>
-    ipcRenderer.on('notify:new', (_, data) => cb(data)),
-})
-```
-
-> **原则**：`contextBridge` 只暴露最小必要接口，所有数据须经过类型校验后再注入 Store。
+| 方法 | 方向 | 说明 |
+|------|------|------|
+| `setClickThrough(enable)` | R→M | 切换窗口穿透（鼠标进出岛区域） |
+| `setIslandExpanded(expanded)` | R→M | 展开/收起，驱动窗口 resize + 穿透切换 |
+| `pin()` | R→M | 请求主进程将窗口设为可聚焦并激活焦点 |
+| `mediaControl(action)` | R→M | 发送播放控制（prev/next/toggle） |
+| `mediaSeek(seconds)` | R→M | 发送 seek 指令 |
+| `getSettings()` | R↔M | 读取当前设置 + 可用显示器列表（invoke） |
+| `setSettings(settings)` | R→M | 提交新设置，主进程校验后应用 |
+| `openSettings()` | R→M | 打开设置窗口 |
+| `onMediaUpdate(cb)` | M→R | 订阅媒体信息更新，返回取消订阅函数 |
+| `onMediaPosition(cb)` | M→R | 订阅高频进度更新，返回取消订阅函数 |
+| `onNotification(cb)` | M→R | 订阅系统通知 |
+| `onWindowBlur(cb)` | M→R | 订阅窗口失去焦点事件（兜底收起） |
+| `onSettingsChanged(cb)` | M→R | 订阅设置变更（用于更新 CSS 缩放变量） |
 
 ---
 
-### 5.3 岛状态机 (Pinia Store)
+### 5.4 岛状态机 Pinia Store
 
 **`src/renderer/src/store/island.ts`**
 
 ```typescript
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-
-// 岛的所有可能状态
 export type IslandMode = 'COMPACT' | 'MUSIC' | 'NOTIFICATION' | 'TIMER'
 
-export const useIslandStore = defineStore('island', () => {
-  // ── 状态 ──
-  const mode = ref<IslandMode>('COMPACT')
-  const isExpanded = ref(false)
-  const mediaInfo = ref<MediaInfo | null>(null)
-  const notification = ref<NoticeInfo | null>(null)
-
-  // ── 计算属性 ──
-  const islandSize = computed(() => {
-    if (!isExpanded.value) return { width: 200, height: 36 }
-    const sizeMap: Record<IslandMode, { width: number; height: number }> = {
-      COMPACT:      { width: 200, height: 36 },
-      MUSIC:        { width: 380, height: 120 },
-      NOTIFICATION: { width: 340, height: 80 },
-      TIMER:        { width: 260, height: 60 },
-    }
-    return sizeMap[mode.value]
-  })
-
-  // ── 动作 ──
-  function applyMediaUpdate(info: MediaInfo) {
-    mediaInfo.value = info
-    mode.value = 'MUSIC'
-  }
-
-  function applyNotification(notice: NoticeInfo) {
-    notification.value = notice
-    mode.value = 'NOTIFICATION'
-    // 5 秒后自动收回
-    setTimeout(() => { mode.value = 'COMPACT' }, 5000)
-  }
-
-  function collapse() {
-    isExpanded.value = false
-  }
-
-  function expand() {
-    isExpanded.value = true
-  }
-
-  // ── IPC 订阅（在 App.vue 的 onMounted 中调用 init）──
-  function init() {
-    window.electron.onMediaUpdate(applyMediaUpdate)
-    window.electron.onNotification(applyNotification)
-  }
-
-  return {
-    mode, isExpanded, mediaInfo, notification, islandSize,
-    applyMediaUpdate, applyNotification, collapse, expand, init,
-  }
-})
+const SIZE_MAP: Record<IslandMode, { width: number; height: number }> = {
+  COMPACT:      { width: 240, height: 72  },
+  MUSIC:        { width: 360, height: 135 },
+  NOTIFICATION: { width: 340, height: 80  },
+  TIMER:        { width: 260, height: 60  },
+}
+const COMPACT_SIZE       = { width: 210, height: 36 }
+const MUSIC_COMPACT_SIZE = { width: 280, height: 36 }  // 音乐播放中稍宽，显示缩略图
 ```
+
+**状态字段：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `mode` | `IslandMode` | 当前岛模式 |
+| `isExpanded` | `boolean` | 是否展开 |
+| `isPinned` | `boolean` | 用户主动锁定展开 |
+| `mediaInfo` | `MediaInfo \| null` | 最新完整媒体信息（含缩略图） |
+| `notification` | `NoticeInfo \| null` | 当前通知 |
+| `position` | `number` | 当前播放位置（秒） |
+| `duration` | `number` | 总时长（秒） |
+
+**关键动作：**
+
+```typescript
+// 点击岛切换展开/收起，同步通知主进程调整窗口大小
+function togglePin(): void {
+  if (isExpanded.value) {
+    isExpanded.value = false
+    isPinned.value   = false
+    window.electron.setIslandExpanded(false)
+  } else {
+    isExpanded.value = true
+    isPinned.value   = true
+    window.electron.setIslandExpanded(true)
+  }
+}
+```
+
+**防闪策略：**
+- 媒体停止时延迟 3s 才重置为 COMPACT，避免换曲间短暂丢失会话导致界面抖动
+- `onWindowBlur` 作为收起兜底，主要依赖背景点击（全屏覆盖后 `@mousedown.self`）
 
 ---
 
-### 5.4 UI 组件层
+### 5.5 UI 组件层
 
 #### IslandShell.vue — 药丸容器
 
-负责岛的形状动画，内部使用 `<component :is>` 动态切换内容。
+```html
+<div
+  class="island-shell"
+  :style="shellStyle"
+  @click.stop="store.togglePin()"
+>
+  <component :is="componentMap[store.mode]" />
+</div>
+```
+
+- `shellStyle` 从 `store.islandSize` 读取 `width/height`，配合 CSS `transition` 平滑扩缩
+- `transform: scale(var(--island-scale, 1))` 响应设置缩放倍数
+- `@click.stop` 阻止事件冒泡，避免触发 App.vue 背景的 `onBackdrop`
+
+#### App.vue — 背景点击捕获
 
 ```html
-<template>
-  <div
-    v-motion
-    class="island-shell"
-    :initial="{ width: 200, height: 36, borderRadius: 20 }"
-    :animate="{
-      width: store.islandSize.width,
-      height: store.islandSize.height,
-      transition: { type: 'spring', stiffness: 300, damping: 28 }
-    }"
-    @mouseenter="store.expand(); setClickThrough(false)"
-    @mouseleave="store.collapse(); setClickThrough(true)"
-  >
-    <Transition name="island-fade" mode="out-in">
-      <component :is="activeComponent" :key="store.mode" />
-    </Transition>
-  </div>
-</template>
+<div
+  class="app-root"
+  :style="{ pointerEvents: store.isExpanded ? 'auto' : 'none' }"
+  @mousedown.self="onBackdrop"
+>
+  <IslandShell />
+</div>
 ```
+
+- 未展开时 `pointer-events: none`，鼠标穿透到桌面
+- 展开后主进程将窗口拉伸为全屏，`pointer-events: auto` 使背景区域可接收点击
+- `@mousedown.self` 点击 `.app-root` 本身（非岛内容）时触发收起
+
+#### Music.vue — 拖拽进度条
+
+```typescript
+function onSeekMousedown(e: MouseEvent): void {
+  isDragging.value = true
+  _dragBarRect     = barRef.value!.getBoundingClientRect()
+  dragPct.value    = clamp((e.clientX - _dragBarRect.left) / _dragBarRect.width)
+  window.addEventListener('mousemove', onSeekMousemove)
+  window.addEventListener('mouseup',   onSeekMouseup)
+}
+
+function onSeekMouseup(): void {
+  window.electron.mediaSeek(dragPct.value * store.duration)
+  isDragging.value = false
+  window.removeEventListener('mousemove', onSeekMousemove)
+  window.removeEventListener('mouseup',   onSeekMouseup)
+}
+```
+
+拖拽期间显示 `dragPct`（实时反馈），松手后调用 `mediaSeek`；`onUnmounted` 清理 window 监听器。
 
 #### 组件状态映射表
 
-| 组件文件 | 对应 `IslandMode` | 触发条件 |
-|----------|-------------------|----------|
+| 组件 | `IslandMode` | 触发条件 |
+|------|-------------|----------|
 | `Compact.vue` | `COMPACT` | 默认/空闲 |
-| `Music.vue` | `MUSIC` | 系统媒体会话活跃 |
-| `Notification.vue` | `NOTIFICATION` | 收到系统通知 |
-| `Timer.vue` | `TIMER` | 用户手动启动计时 |
+| `Music.vue` | `MUSIC` | SMTC 有活跃媒体会话 |
+| `Notification.vue` | `NOTIFICATION` | 系统通知到达，5s 自动收回 |
+| `Timer.vue` | `TIMER` | 用户手动激活 |
 
 ---
 
-### 5.5 动效系统
+### 5.6 动效系统
 
-**使用 `@vueuse/motion` 的 Spring 动画（推荐）**
+岛的尺寸变化通过 CSS `transition` 实现，无需 JS 动画库：
 
-```bash
-npm install @vueuse/motion
+```css
+.island-shell {
+  transition:
+    width  250ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    height 250ms cubic-bezier(0.05, 0.7, 0.1, 1),
+    border-radius 200ms cubic-bezier(0.2, 0, 0, 1);
+}
 ```
-
-在 `main.ts` 中注册：
-
-```typescript
-import { MotionPlugin } from '@vueuse/motion'
-app.use(MotionPlugin)
-```
-
-**过渡参数参考值（M3 风格）：**
-
-| 动画类型 | stiffness | damping | 说明 |
-|----------|-----------|---------|------|
-| 岛扩展/收缩 | 300 | 28 | 丝滑弹簧，不过冲 |
-| 状态切换 fade | — | — | CSS `opacity` 150ms |
-| 通知弹入 | 400 | 20 | 略带弹跳感 |
 
 **`styles/motion.css`** — 全局过渡变量
 
 ```css
 :root {
-  --md-motion-duration-short: 150ms;
-  --md-motion-duration-medium: 250ms;
-  --md-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-motion-duration-short:    150ms;
+  --md-motion-duration-medium:   250ms;
+  --md-motion-easing-standard:   cubic-bezier(0.2, 0, 0, 1);
   --md-motion-easing-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
-}
-
-.island-fade-enter-active,
-.island-fade-leave-active {
-  transition: opacity var(--md-motion-duration-short) var(--md-motion-easing-standard);
-}
-.island-fade-enter-from,
-.island-fade-leave-to {
-  opacity: 0;
 }
 ```
 
+| 动画类型 | 时长 | 曲线 |
+|----------|------|------|
+| 岛扩展/收缩（宽高） | 250ms | emphasized（M3 强调型）|
+| 圆角变化 | 200ms | standard |
+| 进度条（拖拽中） | `transition: none` | — |
+
 ---
 
-### 5.6 M3 主题系统
+### 5.7 M3 主题系统
 
 **`src/renderer/src/composables/useM3Theme.ts`**
 
 ```typescript
-import { watchEffect } from 'vue'
 import { argbFromHex, themeFromSourceColor, applyTheme } from '@material/material-color-utilities'
 
 export function useM3Theme(sourceHex = '#6750A4') {
-  const theme = themeFromSourceColor(argbFromHex(sourceHex))
-
-  watchEffect(() => {
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    applyTheme(theme, { target: document.documentElement, dark: isDark })
-  })
+  const theme  = themeFromSourceColor(argbFromHex(sourceHex))
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  applyTheme(theme, { target: document.documentElement, dark: isDark })
 }
 ```
 
-在 `App.vue` 中调用：
-
-```typescript
-// App.vue <script setup>
-import { useM3Theme } from './composables/useM3Theme'
-useM3Theme('#6750A4')  // 传入品牌色，M3 自动生成全套配色
-```
-
-生成的 CSS 变量可直接在组件中使用：
+生成的 CSS 变量可在组件中直接引用：
 
 ```css
 .island-shell {
@@ -417,157 +483,209 @@ useM3Theme('#6750A4')  // 传入品牌色，M3 自动生成全套配色
 
 ---
 
-## 6. 模块化设计
+## 6. IPC 频道一览
 
-### 6.1 模块化原则
+所有频道名称集中定义在 `src/shared/types.ts` 的 `IPC` 常量对象，避免魔法字符串。
 
-| 原则 | 说明 |
-|------|------|
-| **单一职责** | 每个模块只做一件事：Provider 采集数据、Store 管理状态、Component 渲染 |
-| **接口契约** | 模块间通过 `src/shared/types.ts` 中的 TypeScript 接口通信，不依赖实现细节 |
-| **依赖倒置** | 组件依赖 Pinia 抽象，不感知 Electron/IPC；Composable 封装所有副作用 |
-| **可替换 Provider** | `main/providers/*` 均继承 `EventEmitter`，可以独立替换（如把 PS 轮询换成原生模块）|
-| **分层访问** | 严禁组件直接调用 `window.electron.*`，必须经过 `composables/useWinBridge` |
+| 常量名 | 频道字符串 | 方向 | 说明 |
+|--------|-----------|------|------|
+| `ISLAND_CLICKTHROUGH` | `island:set-clickthrough` | R→M | 切换鼠标穿透 |
+| `ISLAND_PIN` | `island:pin` | R→M | 请求窗口聚焦 |
+| `ISLAND_BLUR` | `island:blur` | M→R | 窗口失去焦点通知 |
+| `ISLAND_EXPANDED` | `island:expanded` | R→M | 展开/收起，驱动窗口 resize |
+| `MEDIA_UPDATE` | `media:update` | M→R | 完整媒体信息推送 |
+| `MEDIA_POSITION` | `media:position` | M→R | 高频进度更新 |
+| `MEDIA_CONTROL` | `media:control` | R→M | 播放控制（prev/next/toggle） |
+| `MEDIA_SEEK` | `media:seek` | R→M | seek 到指定秒数 |
+| `NOTIFY_NEW` | `notify:new` | M→R | 系统通知推送 |
+| `SETTINGS_OPEN` | `settings:open` | R→M | 打开设置窗口 |
+| `SETTINGS_GET` | `settings:get` | R↔M | 读取设置（invoke/handle） |
+| `SETTINGS_SET` | `settings:set` | R→M | 更新设置 |
+| `SETTINGS_CHANGED` | `settings:changed` | M→R | 设置已更新通知 |
 
-### 6.2 模块依赖图
+---
+
+## 7. 窗口管理策略
+
+### 7.1 岛窗口
+
+| 状态 | 窗口尺寸 | `setIgnoreMouseEvents` | `focusable` |
+|------|---------|------------------------|-------------|
+| 默认/收起 | 440×180（×scale） | `true, { forward: true }` | `false` |
+| 鼠标悬停岛 | 440×180 | `false` | `false` |
+| 展开（isPinned） | 全屏 display.bounds | `false` | `true`（pin 期间） |
+
+**展开时全屏覆盖的原因：**
+
+Electron 窗口只有 440×180px 时，屏幕其他区域的点击事件根本不会传递到 Electron 进程。将窗口拉伸为全屏后，透明背景区域的点击才能被 `@mousedown.self` 捕获，触发收起。
+
+**`_lastPinTime` blur 防抖：**
+
+Windows 上透明 Electron 窗口在 `setFocusable(true)` → `focus()` 后会立即触发 blur（已知 quirk）。记录 pin 时间戳，500ms 内收到的 blur 事件被忽略。
+
+### 7.2 设置窗口
+
+- 标准有边框窗口，尺寸 600×500
+- 组件：`Settings.vue`
+- `IPC.SETTINGS_GET`（invoke）读取，`IPC.SETTINGS_SET` 提交
+- 保存后主进程校验、持久化，并通过 `IPC.SETTINGS_CHANGED` 通知岛渲染层更新 `--island-scale` CSS 变量
+
+---
+
+## 8. 模块化设计
+
+### 8.1 模块依赖图
 
 ```
-src/shared/types.ts          ← 所有模块共同依赖的类型契约
+src/shared/types.ts                  ← 所有模块共同依赖的类型契约
         │
-        ├──► src/main/providers/*   (采集层)
+        ├──► sidecar/SmtcServer      (原生采集层，独立进程)
+        │         │ stdout JSON 行
+        │         ▼
+        ├──► src/main/providers/*    (采集层：解析 JSON，emit 事件)
         │         │ EventEmitter
         │         ▼
-        │    src/main/index.ts      (IPC 转发层)
-        │         │ ipcRenderer.send / on
+        │    src/main/index.ts       (IPC 转发层)
+        │         │ ipcRenderer.send / on / handle
         │         ▼
-        ├──► src/preload/index.ts   (安全桥接层)
-        │         │ contextBridge
+        ├──► src/preload/index.ts    (安全桥接层，contextBridge)
+        │         │ window.electron.*
         │         ▼
-        ├──► composables/useWinBridge.ts  (渲染层 IO 封装)
-        │         │
-        │         ▼
-        ├──► store/island.ts        (状态机层)
+        ├──► store/island.ts         (状态机层)
         │         │ ref / computed
         │         ▼
-        └──► components/*           (纯展示层，只读 Store)
+        └──► components/*            (纯展示层，只读 Store)
 ```
 
-### 6.3 各模块边界规则
+### 8.2 各模块边界规则
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ Module              │ 允许依赖              │ 禁止依赖    │
-├─────────────────────┼───────────────────────┼────────────┤
-│ components/*        │ store, composables    │ preload    │
-│ composables/*       │ store, window.electron│ ipcRenderer│
-│ store/island.ts     │ shared/types          │ electron   │
-│ preload/index.ts    │ ipcRenderer, types    │ main       │
-│ main/providers/*    │ Node.js, types        │ renderer   │
-│ main/index.ts       │ providers, ipcMain    │ renderer   │
-└─────────────────────┴───────────────────────┴────────────┘
-```
-
-### 6.4 扩展新功能的标准路径
-
-新增一个系统数据源（如 CPU 占用显示）：
-
-```
-1. shared/types.ts      → 添加 CpuInfo 接口
-2. main/providers/      → 新建 cpu.ts，继承 EventEmitter，轮询数据
-3. main/index.ts        → 注册 ipcMain，订阅 provider 并 send 给渲染层
-4. preload/index.ts     → contextBridge 新增 onCpuUpdate 方法
-5. store/island.ts      → 添加 cpuInfo ref + applyUpdate action
-6. components/          → 新建 CpuView.vue，从 store 读数据
-```
-
-每一步独立，不影响其他模块。
+| 模块 | 允许依赖 | 禁止 |
+|------|---------|------|
+| `components/*` | store、composables | preload、ipcRenderer |
+| `composables/*` | store、`window.electron` | ipcRenderer 直接调用 |
+| `store/island.ts` | shared/types、`window.electron` | Electron API |
+| `preload/index.ts` | ipcRenderer、types | main 模块 |
+| `main/providers/*` | Node.js、types | renderer |
+| `main/index.ts` | providers、ipcMain、window.ts | renderer |
 
 ---
 
-## 7. 数据流
+## 9. 数据流
+
+### 媒体信息流
 
 ```
-系统事件（媒体/通知）
+Windows SMTC API
+       │  WinRT
+       ▼
+SmtcServer.exe (C# sidecar)
+       │  stdout JSON 行
+       ▼
+MediaProvider._spawn() → readline 解析
+       ├── emit('update', MediaInfo)   ──► MEDIA_UPDATE  → store.applyMediaUpdate()
+       └── emit('position', MediaPos)  ──► MEDIA_POSITION → store.position / duration
+                                                                    │
+                                                         Music.vue 进度条渲染
+```
+
+### Seek 流
+
+```
+Music.vue 拖拽 mouseup
+       │  window.electron.mediaSeek(seconds)
+       ▼
+ipcMain → mediaProvider.sendSeek(seconds)
+       │  stdin: "seek:134.5\n"
+       ▼
+SmtcServer.exe → TryChangePlaybackPositionAsync()
+       │  SMTC 触发 position 变化
+       ▼
+SmtcServer stdout → MEDIA_POSITION → store.position 更新
+```
+
+### 展开/收起流
+
+```
+用户点击岛 → IslandShell @click.stop → store.togglePin()
+       ├── store.isExpanded = true
+       ├── window.electron.setIslandExpanded(true) ──► IPC.ISLAND_EXPANDED
+       │                                              → win.setBounds(全屏)
+       │                                              → setIgnoreMouseEvents(false)
        │
-       ▼
-  主进程 Provider
-  (src/main/providers/*)
-       │  ipcMain.send
-       ▼
-  Preload contextBridge
-  window.electron.onMediaUpdate
-       │
-       ▼
-  Pinia Store (island.ts)
-  applyMediaUpdate / applyNotification
-       │
-       ▼
-  计算属性 islandSize / activeComponent
-       │
-       ▼
-  IslandShell.vue  →  v-motion 动画
-       │
-       ▼
-  子组件渲染 (Music / Notification / ...)
-       │
-       ▼
-  用户交互（鼠标悬停）
-       │  ipcRenderer.send
-       ▼
-  主进程 setIgnoreMouseEvents()
+用户点击岛外 → App.vue @mousedown.self → onBackdrop() → store.togglePin()
+       ├── store.isExpanded = false
+       └── window.electron.setIslandExpanded(false) ──► IPC.ISLAND_EXPANDED
+                                                       → win.setBounds(440×180)
+                                                       → setIgnoreMouseEvents(true, forward)
 ```
 
 ---
 
-## 8. 扩展指南
+## 10. 扩展指南
 
-### 新增一种岛状态
+### 新增一种岛状态（以「天气」为例）
 
-1. 在 `store/island.ts` 的 `IslandMode` 联合类型中添加新枚举值
-2. 在 `islandSize` 的 `sizeMap` 中添加对应尺寸
-3. 在 `components/` 下新建对应 `.vue` 文件
-4. 在 `IslandShell.vue` 的组件映射表中注册
-5. 在 `store/island.ts` 中添加触发该状态的 action
+```
+1. src/shared/types.ts
+   → 添加 WeatherInfo 接口
 
-### 新增一种系统数据源
+2. src/main/providers/weather.ts
+   → 定期获取天气数据，emit('update', WeatherInfo)
 
-1. 在 `src/main/providers/` 下新建 `xxx.ts`，继承 `EventEmitter`
-2. 在 `src/main/index.ts` 中注册并转发 IPC 事件
-3. 在 `src/preload/index.ts` 的 `contextBridge` 中暴露订阅接口
-4. 在 Pinia Store 的 `init()` 中订阅
+3. src/main/index.ts
+   → 注册 provider，通过 ipcMain 转发到渲染层
+
+4. src/preload/index.ts + index.d.ts
+   → contextBridge 新增 onWeatherUpdate 方法
+
+5. src/renderer/src/store/island.ts
+   → IslandMode 添加 'WEATHER'
+   → SIZE_MAP 添加对应尺寸
+   → 添加 weatherInfo ref + applyWeatherUpdate action
+   → init() 中订阅
+
+6. src/renderer/src/components/Weather.vue
+   → 从 store 读数据，纯展示
+
+7. IslandShell.vue componentMap
+   → 注册 WEATHER → Weather
+```
+
+### 新增原生 Windows API 数据源
+
+如需访问更底层的 Windows API（如音量、屏幕亮度），建议复用 sidecar 模式：
+
+1. 在 `sidecar/` 下新建 C# .NET 8 项目
+2. 以相同 JSON 行协议写入 stdout，从 stdin 读取命令
+3. 在 `main/providers/` 下新建 TypeScript 封装（继承 `EventEmitter`）
 
 ---
 
-## 9. 启动与构建
+## 11. 启动与构建
 
 ```bash
-# 安装依赖
+# 安装 Node 依赖
 npm install
+
+# 编译 C# sidecar（首次或 sidecar 代码变更后执行）
+dotnet build sidecar/SmtcServer -c Release
 
 # 开发模式（支持 HMR）
 npm run dev
 
-# 构建生产包
+# 类型检查
+npx vue-tsc --noEmit --project tsconfig.web.json
+npx tsc   --noEmit --project tsconfig.node.json
+
+# 构建生产包（electron-builder 将 SmtcServer.exe 打包进 resources/）
 npm run build
-
-# 预览打包结果
-npm run preview
 ```
 
-**推荐初始化方式：**
-
-```bash
-npm create electron-vite@latest
-# 选择: Vue → TypeScript
-```
-
-**核心依赖安装：**
-
-```bash
-npm install pinia @vueuse/core @vueuse/motion
-npm install @material/material-color-utilities
-```
+**系统要求：**
+- Windows 10 2004+（Build 19041+）— SMTC API 最低版本要求
+- Node.js 20+
+- .NET 8 SDK（仅开发时需要，生产包含预编译 exe）
 
 ---
 
-*文档版本: 0.1.0 · 最后更新: 2026-04-13*
+*文档版本: 0.3.0 · 最后更新: 2026-04-14*
