@@ -95,7 +95,20 @@ jobs:
         shell: pwsh
         run: Get-ChildItem dist -Recurse -Include "*.exe","*.yml","*.yaml" | Select-Object FullName, Length
 
-      # ── 10. 创建新 Nightly Release ───────────────────────
+      # ── 10. 删除同一天的旧 Nightly Release ──────────────
+      - name: Delete same-day nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $date = "${{ steps.version.outputs.DATE }}"
+          $releases = gh release list --json tagName --jq "[.[] | select(.tagName | startswith(\"nightly-$date-\")) | .tagName]" | ConvertFrom-Json
+          foreach ($t in $releases) {
+            Write-Host "Deleting same-day nightly release: $t"
+            gh release delete $t --yes --cleanup-tag 2>$null
+          }
+
+      # ── 11. 创建新 Nightly Release ───────────────────────
       - name: Create nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
