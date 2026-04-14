@@ -68,11 +68,15 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
 
-      # ── 6. TypeScript 类型检查 ────────────────────────────
+      # ── 6. 生成应用图标 ──────────────────────────────────
+      - name: Generate app icon
+        run: npm run gen-icon
+
+      # ── 7. TypeScript 类型检查 ────────────────────────────
       - name: Type check
         run: npm run typecheck
 
-      # ── 7. 编译 Electron 渲染/主进程 ─────────────────────
+      # ── 8. 编译 Electron 渲染/主进程 ─────────────────────
       - name: Build Electron app
         run: npm run build
 

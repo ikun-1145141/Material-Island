@@ -49,6 +49,9 @@ jobs:
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
 
+      - name: Generate app icon
+        run: npm run gen-icon
+
       - name: Type check
         run: npm run typecheck
 

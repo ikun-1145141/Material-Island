@@ -8,7 +8,9 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json"
+    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "gen-icon": "node scripts/gen-icon.mjs",
+    "prebuild": "npm run gen-icon"
   },
   "dependencies": {
     "@material/material-color-utilities": "^0.3.0",
@@ -23,6 +25,8 @@
     "electron": "^30.0.1",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.1.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
     "typescript": "^5.4.5",
     "vue-tsc": "^2.0.14"
   },
@@ -32,6 +36,14 @@
     "win": {
       "target": "nsis",
       "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowDirChange": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Material Island"
     },
     "extraResources": [
       {
