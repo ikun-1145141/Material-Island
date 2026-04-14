@@ -70,12 +70,16 @@ export const useIslandStore = defineStore('island', () => {
     if (isExpanded.value) {
       isExpanded.value = false
       isPinned.value   = false
-      window.electron.setIslandExpanded(false)
     } else {
       isExpanded.value = true
       isPinned.value   = true
-      window.electron.setIslandExpanded(true)
     }
+  }
+
+  /** 鼠标离开岛时收起（无论模式和锁定状态） */
+  function mouseLeave(): void {
+    isExpanded.value = false
+    isPinned.value   = false
   }
 
   /** 接收媒体更新，切换到音乐模式 */
@@ -172,6 +176,7 @@ export const useIslandStore = defineStore('island', () => {
     expand,
     collapse,
     togglePin,
+    mouseLeave,
     applyMediaUpdate,
     applyNotification,
     activateTimer,

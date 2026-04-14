@@ -2,13 +2,10 @@
   <!-- 设置页面 -->
   <Settings v-if="isSettings" />
 
-  <!-- 岛主界面：透明全覆盖容器 -->
-  <!-- 展开时不穿透，mousedown.self = 点中透明背景区域 → 收起 -->
+  <!-- 岛主界面：透明全覆盖容器，自身不拦截鼠标（IslandShell 有 pointer-events:auto） -->
   <div
     v-else
     class="app-root"
-    :style="{ pointerEvents: store.isExpanded ? 'auto' : 'none' }"
-    @mousedown.self="onBackdrop"
   >
     <IslandShell />
   </div>
@@ -26,11 +23,6 @@ const isSettings = ref(window.location.hash === '#settings')
 
 const store = useIslandStore()
 useM3Theme('#6750A4')
-
-// 点击岛外透明区域 → 收起
-function onBackdrop(): void {
-  if (store.isExpanded) store.togglePin()
-}
 
 let cleanup: (() => void) | undefined
 onMounted(() => {
