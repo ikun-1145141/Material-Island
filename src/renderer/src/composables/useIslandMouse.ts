@@ -1,8 +1,8 @@
 // composables/useIslandMouse.ts
-// 驱动鼠标穿透 + 展开时离开自动收起：
-//   鼠标进入岛 → setClickThrough(false) → 可以点击岛
-//   鼠标离开岛 → setClickThrough(true)  → 点击穿透到桌面
-//   鼠标离开岛且已展开 → mouseLeave() → 自动收起卡片
+// 驱动鼠标穿透 + 展开时离开自动收起 + 静默计时器暂停/恢复：
+//   鼠标进入岛 → setClickThrough(false) + 暂停静默倒计时
+//   鼠标离开岛 → setClickThrough(true)  + 恢复静默倒计时
+//   鼠标离开岛且已展开（非静默模式）→ mouseLeave() → 自动收起卡片
 
 import { watch, type Ref } from 'vue'
 import { useMouseInElement } from '@vueuse/core'
@@ -14,9 +14,17 @@ export function useIslandMouse(targetRef: Ref<HTMLElement | null>) {
 
   watch(isOutside, (outside) => {
     window.electron.setClickThrough(outside)
-    // 展开状态下鼠标离开岛 → 自动收起
-    if (outside && store.isExpanded) {
-      store.mouseLeave()
+
+    if (outside) {
+      // 鼠标离开：恢复静默倒计时
+      store.resumeSilentTimer()
+      // 展开状态且非静默模式时，自动收起卡片
+      if (store.isExpanded && !store.isSilent) {
+        store.mouseLeave()
+      }
+    } else {
+      // 鼠标进入：暂停静默倒计时
+      store.pauseSilentTimer()
     }
   })
 

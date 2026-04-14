@@ -106,9 +106,11 @@ function registerIpcHandlers(): void {
   ipcMain.on(IPC.SETTINGS_SET, (_, next: AppSettings) => {
     // 基本校验
     const validated: AppSettings = {
-      scale:     Math.min(2.0, Math.max(0.5, Number(next.scale)     || 1.0)),
-      topOffset: Math.min(200, Math.max(0,   Math.round(Number(next.topOffset) || 0))),
-      displayId: Number(next.displayId) || -1,
+      scale:           Math.min(2.0, Math.max(0.5, Number(next.scale)     || 1.0)),
+      topOffset:       Math.min(200, Math.max(0,   Math.round(Number(next.topOffset) || 0))),
+      displayId:       Number(next.displayId) || -1,
+      silentMode:      Boolean(next.silentMode),
+      silentModeDelay: Math.min(3600, Math.max(0, Math.round(Number(next.silentModeDelay) || 0))),
     }
     currentSettings = validated
     saveSettings(validated)

@@ -1,9 +1,8 @@
 <template>
   <div class="settings-root">
-    <!-- 标题栏 -->
+    <!-- 标题栏：仅显示标题文字，closing 由 titleBarOverlay 原生按钟处理 -->
     <div class="titlebar">
       <span class="titlebar-title">Material Island 设置</span>
-      <button class="close-btn" @click="closeWindow">✕</button>
     </div>
 
     <div class="content">
@@ -62,6 +61,38 @@
         </div>
       </section>
 
+      <!-- 静默模式 -->
+      <section class="section">
+        <h3 class="section-title">静默模式</h3>
+        <div class="row">
+          <label class="row-label">启用静默模式</label>
+          <label class="toggle">
+            <input type="checkbox" v-model="draft.silentMode" />
+            <span class="toggle-track" />
+          </label>
+        </div>
+        <div class="row" v-if="draft.silentMode">
+          <label class="row-label">自动静默</label>
+          <div class="slider-group">
+            <input
+              type="range"
+              min="0" max="300" step="5"
+              v-model.number="draft.silentModeDelay"
+              class="slider"
+            />
+            <span class="slider-val">
+              {{ draft.silentModeDelay === 0 ? '关闭' : draft.silentModeDelay + 's' }}
+            </span>
+          </div>
+        </div>
+        <p class="section-hint" v-if="draft.silentMode && draft.silentModeDelay > 0">
+          播放 {{ draft.silentModeDelay }} 秒后，岛自动缩为顶部横条
+        </p>
+        <p class="section-hint" v-else-if="draft.silentMode">
+          仅手动点击托盘图标进入静默，不自动静默
+        </p>
+      </section>
+
       <!-- 操作按钮 -->
       <div class="actions">
         <button class="btn secondary" @click="reset">恢复默认</button>
@@ -81,6 +112,8 @@ const draft = reactive<AppSettings>({
   scale: 1.0,
   topOffset: 0,
   displayId: -1,
+  silentMode: false,
+  silentModeDelay: 0,
 })
 
 const scalePresets = [
@@ -101,14 +134,12 @@ function save(): void {
 }
 
 function reset(): void {
-  draft.scale     = 1.0
-  draft.topOffset = 0
-  draft.displayId = -1
+  draft.scale           = 1.0
+  draft.topOffset       = 0
+  draft.displayId       = -1
+  draft.silentMode      = false
+  draft.silentModeDelay = 0
   window.electron.setSettings({ ...draft })
-}
-
-function closeWindow(): void {
-  window.close()
 }
 </script>
 
@@ -143,18 +174,6 @@ function closeWindow(): void {
   font-weight: 600;
   color: #cac4d0;
 }
-.close-btn {
-  -webkit-app-region: no-drag;
-  border: none;
-  background: transparent;
-  color: #938f99;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
-}
-.close-btn:hover { background: rgba(255,255,255,0.1); color: #e6e1e5; }
 
 /* 内容区 */
 .content {
@@ -277,4 +296,53 @@ function closeWindow(): void {
   color: #1c1b1f;
 }
 .btn.primary:hover { opacity: 0.9; }
+
+/* ── 开关 Toggle ── */
+.toggle {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+.toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.12);
+  border: 2px solid rgba(255,255,255,0.2);
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #938f99;
+  transition: transform 0.2s, background 0.2s;
+}
+.toggle input:checked + .toggle-track {
+  background: #d0bcff;
+  border-color: #d0bcff;
+}
+.toggle input:checked + .toggle-track::after {
+  transform: translateX(20px);
+  background: #1c1b1f;
+}
+
+/* 提示文字 */
+.section-hint {
+  font-size: 11px;
+  color: #79747e;
+  margin: 0;
+  padding-left: 4px;
+}
 </style>

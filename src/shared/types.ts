@@ -39,15 +39,19 @@ export interface ResizePayload {
 
 // ── 应用设置 ──────────────────────────────────────────────
 export interface AppSettings {
-  scale: number          // 岛的缩放倍数，0.5~2.0，默认 1.0
-  topOffset: number      // 距屏幕顶部偏移像素，默认 0
-  displayId: number      // 显示器 ID，-1 表示主屏
+  scale: number            // 岛的缩放倍数，0.5~2.0，默认 1.0
+  topOffset: number        // 距屏幕顶部偏移像素，默认 0
+  displayId: number        // 显示器 ID，-1 表示主屏
+  silentMode: boolean      // 静默模式开关，默认关闭
+  silentModeDelay: number  // 播放多少秒后自动静默（0=不自动），默认 0
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   scale: 1.0,
   topOffset: 0,
   displayId: -1,
+  silentMode: false,
+  silentModeDelay: 0,
 }
 
 // ── IPC 频道名称常量（避免魔法字符串）────────────────────

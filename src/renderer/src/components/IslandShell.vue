@@ -3,11 +3,15 @@
   <div
     ref="shellRef"
     class="island-shell"
-    :class="{ pinned: store.isPinned }"
+    :class="{ pinned: store.isPinned, silent: store.isSilent }"
     :style="shellStyle"
-    @click="store.togglePin()"
+    @click="handleClick"
   >
-    <component :is="activeComponent" :key="store.mode" />
+    <!-- 静默模式：极细横条，无内容，仅显示微弱呼吸指示 -->
+    <div v-if="store.isSilent" class="silent-bar">
+      <span class="silent-dot" />
+    </div>
+    <component v-else :is="activeComponent" :key="store.mode" />
   </div>
 </template>
 
@@ -36,12 +40,18 @@ const componentMap: Record<IslandMode, Component> = {
 
 const activeComponent = computed(() => componentMap[store.mode])
 
-// 尺寸绑定：CSS transition 负责动画，此处只给目标值
-// scale 通过 CSS var --island-scale 控制，由 island store 写入
 const shellStyle = computed(() => ({
   width:  `${store.islandSize.width}px`,
   height: `${store.islandSize.height}px`,
 }))
+
+function handleClick(): void {
+  if (store.isSilent) {
+    store.exitSilent()
+  } else {
+    store.togglePin()
+  }
+}
 </script>
 
 <style scoped>
@@ -68,6 +78,35 @@ const shellStyle = computed(() => ({
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.45),
     0 0 0 1.5px var(--md-sys-color-primary, #d0bcff);
+}
+
+/* 静默横条：超小圆角，更低调 */
+.island-shell.silent {
+  border-radius: 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  background: rgba(28, 27, 31, 0.85);
+}
+
+/* 静默横条内容：居中显示呼吸点 */
+.silent-bar {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.silent-dot {
+  width: 20px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.3);
+  animation: silent-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes silent-pulse {
+  0%, 100% { opacity: 0.3; }
+  50%       { opacity: 0.7; }
 }
 
 /* ── 内容切换过渡 ── */

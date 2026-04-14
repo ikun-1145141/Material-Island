@@ -44,6 +44,7 @@ Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通
 | 系统媒体信息 | C# SmtcServer sidecar 读取 Windows.Media.Control SMTC API |
 | 高频进度更新 | sidecar 独立 position 事件流，减少完整 MediaInfo 解析开销 |
 | 进度 seek | 渲染层拖拽 → IPC → sidecar stdin `seek:N` 命令 |
+| 静默模式 | 岛自动缩为 120×6px 顶部横条，点击恢复；自动静默延迟可在设置中配置 |
 | 持久化设置 | electron-store，JSON 文件落地 |
 | 系统托盘 | Electron `Tray`，右键菜单 + 双击打开设置 |
 | M3 动态配色 | CSS Custom Properties + `@material/material-color-utilities` |
@@ -112,7 +113,7 @@ Material-Island/
     │   └── index.d.ts           # window.electron 全局类型声明
     │
     └── renderer/src/            # ── Vue 渲染层 ──
-        ├── App.vue              # 根组件：背景点击收起 + 动态 pointer-events
+        ├── App.vue              # 根组件：静态居中容器
         ├── main.ts              # Vue 入口，注册 Pinia
         ├── store/
         │   └── island.ts        # 岛状态机（IslandMode + IPC 订阅）
@@ -323,6 +324,7 @@ const SIZE_MAP: Record<IslandMode, { width: number; height: number }> = {
 }
 const COMPACT_SIZE       = { width: 210, height: 36 }
 const MUSIC_COMPACT_SIZE = { width: 280, height: 36 }  // 音乐播放中稍宽，显示缩略图
+const SILENT_BAR_SIZE    = { width: 120, height: 6  }  // 静默模式极细横条
 ```
 
 **状态字段：**
@@ -332,6 +334,8 @@ const MUSIC_COMPACT_SIZE = { width: 280, height: 36 }  // 音乐播放中稍宽�
 | `mode` | `IslandMode` | 当前岛模式 |
 | `isExpanded` | `boolean` | 是否展开 |
 | `isPinned` | `boolean` | 用户主动锁定展开 |
+| `isSilent` | `boolean` | 是否处于静默横条态 |
+| `silentModeEnabled` | `boolean` | 设置项：静默模式开关 |
 | `mediaInfo` | `MediaInfo \| null` | 最新完整媒体信息（含缩略图） |
 | `notification` | `NoticeInfo \| null` | 当前通知 |
 | `position` | `number` | 当前播放位置（秒） |
@@ -368,32 +372,36 @@ function togglePin(): void {
 ```html
 <div
   class="island-shell"
+  :class="{ pinned: store.isPinned, silent: store.isSilent }"
   :style="shellStyle"
-  @click.stop="store.togglePin()"
+  @click="handleClick"
 >
-  <component :is="componentMap[store.mode]" />
+  <div v-if="store.isSilent" class="silent-bar"><span class="silent-dot" /></div>
+  <component v-else :is="componentMap[store.mode]" />
 </div>
 ```
 
-- `shellStyle` 从 `store.islandSize` 读取 `width/height`，配合 CSS `transition` 平滑扩缩
-- `transform: scale(var(--island-scale, 1))` 响应设置缩放倍数
-- `@click.stop` 阻止事件冒泡，避免触发 App.vue 背景的 `onBackdrop`
+```typescript
+function handleClick(): void {
+  if (store.isSilent) store.exitSilent()  // 横条 → 岛
+  else               store.togglePin()   // 岛 → 展开/收起
+}
+```
 
-#### App.vue — 背景点击捕获
+- 静默态下 `.island-shell.silent` 覆盖样式：`border-radius: 3px`、降低阴影、半透明背景
+- `.silent-dot` 呈现呼吸动画（`opacity 2.4s ease-in-out infinite`）
+- `shellStyle` 从 `store.islandSize` 读取 `width/height`，配合 CSS `transition` 平滑扩缩
+
+#### App.vue — 根组件
 
 ```html
-<div
-  class="app-root"
-  :style="{ pointerEvents: store.isExpanded ? 'auto' : 'none' }"
-  @mousedown.self="onBackdrop"
->
+<div class="app-root">
   <IslandShell />
 </div>
 ```
 
-- 未展开时 `pointer-events: none`，鼠标穿透到桌面
-- 展开后主进程将窗口拉伸为全屏，`pointer-events: auto` 使背景区域可接收点击
-- `@mousedown.self` 点击 `.app-root` 本身（非岛内容）时触发收起
+- `.app-root` 为静态水平居中容器，自身 `pointer-events: none`
+- 展开/收起不再通过展开全屏窗口实现，改由 `useIslandMouse` 监衬鼠标位置驱动收起
 
 #### Music.vue — 拖拽进度条
 
@@ -512,13 +520,12 @@ export function useM3Theme(sourceHex = '#6750A4') {
 
 | 状态 | 窗口尺寸 | `setIgnoreMouseEvents` | `focusable` |
 |------|---------|------------------------|-------------|
+| 静默横条 | 120×6（×scale） | `true, { forward: true }` | `false` |
 | 默认/收起 | 440×180（×scale） | `true, { forward: true }` | `false` |
 | 鼠标悬停岛 | 440×180 | `false` | `false` |
-| 展开（isPinned） | 全屏 display.bounds | `false` | `true`（pin 期间） |
+| 展开（isPinned） | 440×180 | `false` | `true`（pin 期间） |
 
-**展开时全屏覆盖的原因：**
-
-Electron 窗口只有 440×180px 时，屏幕其他区域的点击事件根本不会传递到 Electron 进程。将窗口拉伸为全屏后，透明背景区域的点击才能被 `@mousedown.self` 捕获，触发收起。
+两个窗口均使用独立 `partition`（`persist:island` / `persist:settings`），避免 Chromium 同 session 共享缩放比例。
 
 **`_lastPinTime` blur 防抖：**
 
@@ -526,10 +533,10 @@ Windows 上透明 Electron 窗口在 `setFocusable(true)` → `focus()` 后会�
 
 ### 7.2 设置窗口
 
-- 标准有边框窗口，尺寸 600×500
+- 标准有边框窗口，尺寸 520×500
 - 组件：`Settings.vue`
 - `IPC.SETTINGS_GET`（invoke）读取，`IPC.SETTINGS_SET` 提交
-- 保存后主进程校验、持久化，并通过 `IPC.SETTINGS_CHANGED` 通知岛渲染层更新 `--island-scale` CSS 变量
+- 保存后主进程校验（含 `silentMode`、`silentModeDelay` 字段）、持久化，并通过 `IPC.SETTINGS_CHANGED` 通知岛渲染层
 
 ---
 
@@ -607,17 +614,28 @@ SmtcServer stdout → MEDIA_POSITION → store.position 更新
 ### 展开/收起流
 
 ```
-用户点击岛 → IslandShell @click.stop → store.togglePin()
-       ├── store.isExpanded = true
-       ├── window.electron.setIslandExpanded(true) ──► IPC.ISLAND_EXPANDED
-       │                                              → win.setBounds(全屏)
-       │                                              → setIgnoreMouseEvents(false)
+鼠标移入岛 → useIslandMouse → setClickThrough(false) → 可点击
+用户点击岛 → IslandShell @click → handleClick()
+       ├── isSilent: exitSilent() → 岛恢复正常收起态 + 自动静默延迟计时器启动
+       └── 否: togglePin() → 岛展开/收起
+鼠标移出岛 → useIslandMouse → setClickThrough(true)
+       └── isExpanded && !isSilent → store.mouseLeave() → 岛收起
+静默计时器到期 → store.enterSilent() → 岛缩为 120×6 横条
+```
+
+### 静默模式完整流
+
+```
+音乐播放开始（无自动计时）
        │
-用户点击岛外 → App.vue @mousedown.self → onBackdrop() → store.togglePin()
-       ├── store.isExpanded = false
-       └── window.electron.setIslandExpanded(false) ──► IPC.ISLAND_EXPANDED
-                                                       → win.setBounds(440×180)
-                                                       → setIgnoreMouseEvents(true, forward)
+       │ 用户主动点击横条
+       ▼
+exitSilent() → isSilent=false, isExpanded=false
+       └── silentModeDelay > 0 → _startSilentTimer(N秒)
+              │
+              │ N秒后
+              ▼
+        enterSilent() → isSilent=true → 岛缩为 120×6 横条
 ```
 
 ---
