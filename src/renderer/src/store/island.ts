@@ -143,19 +143,11 @@ export const useIslandStore = defineStore('island', () => {
       isPinned.value   = false
       isExpanded.value = false
     })
-    const offSettings = window.electron.onSettingsChanged((s) => {
-      document.documentElement.style.setProperty('--island-scale', String(s.scale))
-    })
-    // 初始读取设置，同步一次 CSS 变量
-    window.electron.getSettings().then(({ settings }) => {
-      document.documentElement.style.setProperty('--island-scale', String(settings.scale))
-    })
     return () => {
       offMedia()
       offPosition()
       offNotice()
       offBlur()
-      offSettings()
       if (_noticeTimer) clearTimeout(_noticeTimer)
       if (_mediaResetTimer) clearTimeout(_mediaResetTimer)
     }

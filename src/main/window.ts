@@ -53,6 +53,7 @@ export function createIslandWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      partition: 'persist:island',  // 独立 session，缩放不影响其他窗口
     },
   })
 
@@ -69,7 +70,9 @@ export function createIslandWindow(): BrowserWindow {
 }
 
 export function applySettingsToIsland(win: BrowserWindow, settings: AppSettings): void {
-  // 设置变更时始终按收起状态设置窗口大小
+  // 缩放：用 webContents.setZoomFactor，整个渲染层等比缩放，鼠标命中区域也跟着走
+  win.webContents.setZoomFactor(settings.scale)
+  // 位置/尺寸：窗口物理大小也随缩放调整，确保展开时内容不被裁剪
   setIslandExpanded(win, false, settings)
 }
 
@@ -91,6 +94,7 @@ export function createSettingsWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      partition: 'persist:settings',  // 独立 session，不继承岛窗口的缩放
     },
   })
 
