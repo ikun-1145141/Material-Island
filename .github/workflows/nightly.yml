@@ -102,7 +102,8 @@ jobs:
         shell: pwsh
         run: |
           $date = "${{ steps.version.outputs.DATE }}"
-          $releases = gh release list --json tagName --jq "[.[] | select(.tagName | startswith(\"nightly-$date-\")) | .tagName]" | ConvertFrom-Json
+          $filter = '[.[] | select(.tagName | startswith("nightly-' + $date + '-")) | .tagName]'
+          $releases = gh release list --json tagName --jq $filter | ConvertFrom-Json
           foreach ($t in $releases) {
             Write-Host "Deleting same-day nightly release: $t"
             gh release delete $t --yes --cleanup-tag 2>$null
