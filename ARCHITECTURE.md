@@ -44,7 +44,7 @@ Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通
 | 系统媒体信息 | C# SmtcServer sidecar 读取 Windows.Media.Control SMTC API |
 | 高频进度更新 | sidecar 独立 position 事件流，减少完整 MediaInfo 解析开销 |
 | 进度 seek | 渲染层拖拽 → IPC → sidecar stdin `seek:N` 命令 |
-| 静默模式 | 岛自动缩为 120×6px 顶部横条，点击恢复；自动静默延迟可在设置中配置 |
+| 静默模式 | 岛自动缩为 120×6px 顶部横条，点击恢复；鼠标在岛内自动暂停静默倒计时，鼠标移出后重启 |
 | 持久化设置 | electron-store，JSON 文件落地 |
 | 系统托盘 | Electron `Tray`，右键菜单 + 双击打开设置 |
 | M3 动态配色 | CSS Custom Properties + `@material/material-color-utilities` |
@@ -284,6 +284,16 @@ if (expanded) {
 **`src/main/settings-store.ts`** — 设置持久化
 
 使用 electron-store 将 `AppSettings` 序列化为 JSON，提供 `loadSettings()` / `saveSettings(settings)` 接口。
+
+`AppSettings` 字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `scale` | `number` | 缩放倍数，0.5～2.0 |
+| `topOffset` | `number` | 距顶部偏移像素 |
+| `displayId` | `number` | 显示器 ID，-1 表示主屏 |
+| `silentMode` | `boolean` | 静默模式开关 |
+| `silentModeDelay` | `number` | 自动静默延迟（秒），0=不自动 |
 
 ---
 
@@ -533,10 +543,11 @@ Windows 上透明 Electron 窗口在 `setFocusable(true)` → `focus()` 后会�
 
 ### 7.2 设置窗口
 
-- 标准有边框窗口，尺寸 520×500
-- 组件：`Settings.vue`
+- `titleBarStyle: 'hidden'` + `titleBarOverlay`：保留 Windows 原生标题栏按钟，拖拽由 OS 处理，消除自定义 `-webkit-app-region: drag` 在 DWM 下的抜闪抖动
+- `titleBarOverlay` 配色与界面背景 `#1c1b1f` 一致
+- 尺寸 520×500，`partition: 'persist:settings'`（独立 session ，缩放偏好不意外继承岛窗口）
 - `IPC.SETTINGS_GET`（invoke）读取，`IPC.SETTINGS_SET` 提交
-- 保存后主进程校验（含 `silentMode`、`silentModeDelay` 字段）、持久化，并通过 `IPC.SETTINGS_CHANGED` 通知岛渲染层
+- 保存后主进程校验所有字段并持久化，通过 `IPC.SETTINGS_CHANGED` 通知岛渲染层
 
 ---
 
@@ -614,28 +625,43 @@ SmtcServer stdout → MEDIA_POSITION → store.position 更新
 ### 展开/收起流
 
 ```
-鼠标移入岛 → useIslandMouse → setClickThrough(false) → 可点击
-用户点击岛 → IslandShell @click → handleClick()
-       ├── isSilent: exitSilent() → 岛恢复正常收起态 + 自动静默延迟计时器启动
-       └── 否: togglePin() → 岛展开/收起
-鼠标移出岛 → useIslandMouse → setClickThrough(true)
-       └── isExpanded && !isSilent → store.mouseLeave() → 岛收起
-静默计时器到期 → store.enterSilent() → 岛缩为 120×6 横条
+鼠标移入岛
+       ├── setClickThrough(false)       ← 可点击
+       └── pauseSilentTimer()           ← 静默倒计时暂停
+
+用户点击岛 → handleClick()
+       ├── isSilent: exitSilent()       ← 横条 → 岛，重新倒计时
+       └── 否: togglePin()
+              ├── 已展开: 岛 → 卡片收起，等鼠标移出
+              └── 未展开: clearSilentTimer() + 岛 → 卡片
+
+鼠标移出岛
+       ├── setClickThrough(true)        ← 穿透恢复
+       ├── resumeSilentTimer()          ← 靠溢倒计时重启
+       └── isExpanded && !isSilent: mouseLeave() ← 卡片 → 岛
+
+静默计时器到期
+       └── !isExpanded: enterSilent()   ← 岛 →  120×6 横条
 ```
 
 ### 静默模式完整流
 
 ```
-音乐播放开始（无自动计时）
-       │
-       │ 用户主动点击横条
-       ▼
-exitSilent() → isSilent=false, isExpanded=false
-       └── silentModeDelay > 0 → _startSilentTimer(N秒)
-              │
-              │ N秒后
-              ▼
-        enterSilent() → isSilent=true → 岛缩为 120×6 横条
+          [岛，音乐播放]
+               │
+   鼠标进入岛内        鼠标在岛外
+       ▼                  ▼
+ pauseSilentTimer()   resumeSilentTimer()
+  计时器暂停                N 秒倒计时运行中
+                            │
+                      N 秒到期
+                            ▼
+                    enterSilent()  ← isExpanded 必须为 false
+                    isSilent=true
+                    岛缩为 120×6 横条
+
+          [横条] 点击 → exitSilent()
+               ↳ isSilent=false + _startSilentTimer() 重新倒计时
 ```
 
 ---
