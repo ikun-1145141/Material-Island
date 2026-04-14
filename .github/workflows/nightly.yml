@@ -1,0 +1,148 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # 每天 UTC 02:00（北京时间 10:00）自动触发
+    - cron: '0 2 * * *'
+  # 允许手动触发，方便调试
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Publish Nightly
+    runs-on: windows-latest
+
+    permissions:
+      contents: write   # 需要写权限才能创建/更新 Release
+
+    steps:
+      # ── 1. 检出代码 ──────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 获取完整历史，供版本号生成使用
+
+      # ── 2. 运行环境 ───────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # ── 3. 生成 Nightly 版本号 ────────────────────────────
+      # 格式：<package.json version>-nightly.<YYYYMMDD>.<short-sha>
+      - name: Compute nightly version
+        id: version
+        shell: pwsh
+        run: |
+          $base    = (Get-Content package.json | ConvertFrom-Json).version
+          $date    = Get-Date -Format "yyyyMMdd"
+          $sha     = "${{ github.sha }}".Substring(0, 7)
+          $ver     = "$base-nightly.$date.$sha"
+          $tag     = "nightly-$date-$sha"
+          echo "VERSION=$ver"  >> $env:GITHUB_OUTPUT
+          echo "TAG=$tag"      >> $env:GITHUB_OUTPUT
+          echo "DATE=$date"    >> $env:GITHUB_OUTPUT
+          Write-Host "Nightly version: $ver  tag: $tag"
+
+      # ── 4. 安装 Node 依赖 ─────────────────────────────────
+      - name: Install Node dependencies
+        run: npm ci
+
+      # ── 5. 编译 C# Sidecar（自包含单文件，无需运行时）────
+      - name: Publish SmtcServer sidecar
+        run: >
+          dotnet publish sidecar/SmtcServer/SmtcServer.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+
+      # ── 6. TypeScript 类型检查 ────────────────────────────
+      - name: Type check
+        run: npm run typecheck
+
+      # ── 7. 编译 Electron 渲染/主进程 ─────────────────────
+      - name: Build Electron app
+        run: npm run build
+
+      # ── 8. 打包成 NSIS 安装包 ────────────────────────────
+      # 将版本号写入环境变量供 electron-builder 读取
+      - name: Package with electron-builder
+        env:
+          # electron-builder 会读取此变量覆盖 package.json 中的 version
+          npm_package_version: ${{ steps.version.outputs.VERSION }}
+          # 不做代码签名（nightly 版本）
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --win --x64 --publish never
+
+      # ── 9. 列出构建产物 ───────────────────────────────────
+      - name: List dist artifacts
+        shell: pwsh
+        run: Get-ChildItem dist -Recurse -Include "*.exe","*.yml","*.yaml" | Select-Object FullName, Length
+
+      # ── 10. 删除同名旧 Nightly Release（保持只有一个） ───
+      - name: Delete previous nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          # 找到所有以 nightly- 开头的 tag 并删除对应 release
+          $releases = gh release list --json tagName --jq '[.[] | select(.tagName | startswith("nightly-")) | .tagName]' | ConvertFrom-Json
+          foreach ($t in $releases) {
+            Write-Host "Deleting old nightly release: $t"
+            gh release delete $t --yes --cleanup-tag 2>$null || true
+          }
+
+      # ── 11. 创建新 Nightly Release ───────────────────────
+      - name: Create nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag     = "${{ steps.version.outputs.TAG }}"
+          $ver     = "${{ steps.version.outputs.VERSION }}"
+          $date    = "${{ steps.version.outputs.DATE }}"
+          $sha     = "${{ github.sha }}".Substring(0, 7)
+          $notes   = @"
+          ## Nightly Build · $date
+
+          > **这是自动构建的每日快照版本，可能包含未经充分测试的功能，不建议在生产环境使用。**
+
+          **构建信息**
+
+          | 项目 | 值 |
+          |------|-----|
+          | 版本 | ``$ver`` |
+          | Commit | [$sha](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) |
+          | 构建时间 | $date UTC+0 |
+          | 分支 | ``${{ github.ref_name }}`` |
+
+          **安装说明**
+
+          下载 ``Material.Island-$ver-setup.exe`` 直接运行安装程序即可。
+          "@
+          gh release create $tag `
+            --title "Nightly · $date" `
+            --notes $notes `
+            --prerelease `
+            --target "${{ github.sha }}" `
+            dist/*.exe
+
+      # ── 12. 上传构建产物到 Actions Artifacts（备份）───────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ steps.version.outputs.DATE }}
+          path: dist/*.exe
+          retention-days: 7
