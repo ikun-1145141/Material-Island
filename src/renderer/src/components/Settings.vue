@@ -241,6 +241,21 @@ function copyToken(): void {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(202,196,208,0.2) transparent;
+}
+.content::-webkit-scrollbar {
+  width: 4px;
+}
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.content::-webkit-scrollbar-thumb {
+  background: rgba(202,196,208,0.2);
+  border-radius: 2px;
+}
+.content::-webkit-scrollbar-thumb:hover {
+  background: rgba(202,196,208,0.4);
 }
 
 .section {
