@@ -205,7 +205,8 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex-shrink: 2;
+  min-width: 0;
+  max-width: 38%;
 }
 
 /* 展开态 */
