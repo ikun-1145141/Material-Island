@@ -82,6 +82,7 @@ export function createSettingsWindow(): BrowserWindow {
     height: 500,
     minWidth: 420,
     minHeight: 420,
+    icon: join(__dirname, '../../resources/icon.ico'),
     // 不用 frame:false，改用 titleBarStyle:'hidden' 保留原生框架
     // 这样拖拽由 Windows OS 原生处理，消除 Electron 自定义拖拽在高 DPI/DWM 下的抜闪问题
     titleBarStyle: 'hidden',
