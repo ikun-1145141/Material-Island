@@ -124,10 +124,10 @@
                 autocomplete="off"
               />
               <button class="icon-btn" @click="showToken = !showToken" :title="showToken ? '隐藏' : '显示'">
-                {{ showToken ? '🙈' : '👁' }}
+                <span class="material-symbols-rounded">{{ showToken ? 'visibility_off' : 'visibility' }}</span>
               </button>
               <button class="icon-btn" @click="copyToken" title="复制">
-                📋
+                <span class="material-symbols-rounded">content_copy</span>
               </button>
             </div>
           </div>
@@ -439,12 +439,15 @@ function copyToken(): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
   padding: 0;
   flex-shrink: 0;
   transition: background 0.15s;
 }
 .icon-btn:hover { background: rgba(255,255,255,0.1); }
+.icon-btn .material-symbols-rounded {
+  font-size: 18px;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+}
 
 /* 地址提示 */
 .addr-hint { margin-top: 2px; }
@@ -455,5 +458,25 @@ function copyToken(): void {
   background: rgba(208,188,255,0.08);
   padding: 1px 5px;
   border-radius: 4px;
+}
+</style>
+
+<style>
+@import '@fontsource-variable/material-symbols-rounded';
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded Variable', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+  display: inline-block;
+  vertical-align: middle;
+  user-select: none;
 }
 </style>

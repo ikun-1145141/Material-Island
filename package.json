@@ -13,6 +13,7 @@
     "prebuild": "npm run gen-icon"
   },
   "dependencies": {
+    "@fontsource-variable/material-symbols-rounded": "^5.2.41",
     "@material/material-color-utilities": "^0.3.0",
     "@vueuse/core": "^10.11.0",
     "@vueuse/motion": "^2.2.3",
