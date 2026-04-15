@@ -20,6 +20,7 @@
    - 5.5 [UI 组件层](#55-ui-组件层)
    - 5.6 [动效系统](#56-动效系统)
    - 5.7 [M3 主题系统](#57-m3-主题系统)
+   - 5.8 [消息接收模块](#58-消息接收模块)
 6. [IPC 频道一览](#6-ipc-频道一览)
 7. [窗口管理策略](#7-窗口管理策略)
 8. [模块化设计](#8-模块化设计)
@@ -45,6 +46,8 @@ Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通
 | 高频进度更新 | sidecar 独立 position 事件流，减少完整 MediaInfo 解析开销 |
 | 进度 seek | 渲染层拖拽 → IPC → sidecar stdin `seek:N` 命令 |
 | 静默模式 | 岛自动缩为 120×6px 顶部横条，点击恢复；鼠标在岛内自动暂停静默倒计时，鼠标移出后重启 |
+| 外部 HTTP 消息推送 | 本地 HTTP Server（仅 localhost），外部程序 / 脚本 POST `/notify` 即可将消息上岛 |
+| Windows 原生通知上岛 | 监听 Windows Toast 通知事件，将系统弹窗同步到岛的 NOTIFICATION 状态 |
 | 持久化设置 | electron-store，JSON 文件落地 |
 | 系统托盘 | Electron `Tray`，右键菜单 + 双击打开设置 |
 | M3 动态配色 | CSS Custom Properties + `@material/material-color-utilities` |
@@ -106,7 +109,8 @@ Material-Island/
     │   ├── settings-store.ts    # 设置读写（electron-store）
     │   └── providers/
     │       ├── media.ts         # 启动/守护 SmtcServer，解析媒体事件
-    │       └── notify.ts        # 系统通知监听
+    │       ├── notify.ts        # 系统通知监听
+    │       └── http-server.ts   # 本地 HTTP 消息接收服务（仅 localhost）
     │
     ├── preload/
     │   ├── index.ts             # contextBridge 安全桥接
@@ -502,6 +506,139 @@ export function useM3Theme(sourceHex = '#6750A4') {
 
 ---
 
+### 5.8 消息接收模块
+
+本模块提供两条独立的消息入口，最终都汇入岛的 `NOTIFICATION` 状态机：
+
+```
+外部 HTTP 请求  ──┐
+                  ├──► HttpNotifyProvider ──► IPC NOTIFY_NEW ──► 岛 NOTIFICATION 态
+Windows 系统通知 ─┘（notify.ts 已有，此处合并描述）
+```
+
+#### 5.8.1 本地 HTTP 服务器
+
+**`src/main/providers/http-server.ts`**
+
+启动一个仅绑定 `127.0.0.1` 的 HTTP 服务（Node.js `http` 内置模块，无额外依赖），监听可配置端口（默认 `19198`）。
+
+**安全边界：**
+
+- 绑定 `127.0.0.1`，拒绝所有外网连接
+- 支持可选 Bearer Token（`AppSettings.httpToken`），为空时不鉴权
+- 请求体大小上限 64 KB，超出直接 400
+
+**API 接口：**
+
+```
+POST /notify
+Content-Type: application/json
+Authorization: Bearer <token>   （可选）
+
+{
+  "title": "构建成功",           // 必填，通知标题
+  "body":  "main 分支 v0.2.0",  // 可选，通知正文
+  "app":   "GitHub Actions",    // 可选，来源应用名
+  "icon":  "data:image/..."     // 可选，base64 图标
+}
+
+→ 200 OK  { "ok": true }
+→ 400     { "error": "invalid body" }
+→ 401     { "error": "unauthorized" }
+```
+
+**核心实现（设计意图）：**
+
+```typescript
+export class HttpNotifyProvider extends EventEmitter {
+  private _server: http.Server | null = null
+
+  start(port: number, token?: string): void {
+    this._server = http.createServer((req, res) => {
+      // 只接受 POST /notify
+      if (req.method !== 'POST' || req.url !== '/notify') {
+        res.writeHead(404); res.end(); return
+      }
+      // Bearer Token 鉴权
+      if (token) {
+        const auth = req.headers['authorization'] ?? ''
+        if (auth !== `Bearer ${token}`) {
+          res.writeHead(401)
+          res.end(JSON.stringify({ error: 'unauthorized' })); return
+        }
+      }
+      // 读取 body（上限 64KB）
+      let body = ''
+      req.on('data', chunk => {
+        body += chunk
+        if (body.length > 65536) req.destroy()
+      })
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body)
+          this.emit('notify', {
+            app:   payload.app   ?? 'HTTP',
+            title: payload.title ?? '(无标题)',
+            body:  payload.body  ?? '',
+          } satisfies NoticeInfo)
+          res.writeHead(200)
+          res.end(JSON.stringify({ ok: true }))
+        } catch {
+          res.writeHead(400)
+          res.end(JSON.stringify({ error: 'invalid body' }))
+        }
+      })
+    })
+    // 仅绑定 127.0.0.1，禁止外网访问
+    this._server.listen(port, '127.0.0.1')
+  }
+
+  stop(): void {
+    this._server?.close()
+    this._server = null
+  }
+}
+```
+
+**`src/main/index.ts` 中注册：**
+
+```typescript
+const httpNotify = new HttpNotifyProvider()
+if (settings.httpEnabled) {
+  httpNotify.start(settings.httpPort, settings.httpToken)
+}
+httpNotify.on('notify', (info: NoticeInfo) => {
+  islandWin.webContents.send(IPC.NOTIFY_NEW, info)
+})
+```
+
+#### 5.8.2 Windows 系统通知监听
+
+**`src/main/providers/notify.ts`**
+
+监听 Windows 通知中心事件，将 Toast 通知同步上岛（已有模块，此处完善描述）。
+
+通知到达 → `emit('notify', NoticeInfo)` → 主进程 `IPC.NOTIFY_NEW` → 渲染层 `NOTIFICATION` 态，5s 后自动收回。
+
+#### 5.8.3 相关 AppSettings 字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `httpEnabled` | `boolean` | `false` | 是否启动 HTTP 消息服务 |
+| `httpPort` | `number` | `19198` | 监听端口（1024-65535） |
+| `httpToken` | `string` | `""` | Bearer Token，空字符串表示不鉴权 |
+
+#### 5.8.4 设置界面集成
+
+Settings.vue 中新增「消息接收」分区：
+
+- Toggle：启用 HTTP 服务
+- 端口输入框（数字，范围 1024–65535）
+- Token 输入框（密码型 input，支持一键复制）
+- 实时显示当前监听地址：`http://127.0.0.1:{port}/notify`
+
+---
+
 ## 6. IPC 频道一览
 
 所有频道名称集中定义在 `src/shared/types.ts` 的 `IPC` 常量对象，避免魔法字符串。
@@ -521,6 +658,7 @@ export function useM3Theme(sourceHex = '#6750A4') {
 | `SETTINGS_GET` | `settings:get` | R↔M | 读取设置（invoke/handle） |
 | `SETTINGS_SET` | `settings:set` | R→M | 更新设置 |
 | `SETTINGS_CHANGED` | `settings:changed` | M→R | 设置已更新通知 |
+| `HTTP_NOTIFY_TOGGLE` | `http-notify:toggle` | R→M | 动态启停 HTTP 服务（端口/Token 变更时） |
 
 ---
 
@@ -562,6 +700,9 @@ src/shared/types.ts                  ← 所有模块共同依赖的类型契约
         │         │ stdout JSON 行
         │         ▼
         ├──► src/main/providers/*    (采集层：解析 JSON，emit 事件)
+        │    ├── media.ts            (SMTC 媒体会话)
+        │    ├── notify.ts           (Windows 系统通知)
+        │    └── http-server.ts      (本地 HTTP 消息接收，127.0.0.1 only)
         │         │ EventEmitter
         │         ▼
         │    src/main/index.ts       (IPC 转发层)
@@ -664,6 +805,39 @@ SmtcServer stdout → MEDIA_POSITION → store.position 更新
                ↳ isSilent=false + _startSilentTimer() 重新倒计时
 ```
 
+### HTTP / Windows 通知上岛流
+
+```
+外部程序 / 脚本
+       │  POST http://127.0.0.1:19198/notify
+       │  { "title": "...", "body": "...", "app": "..." }
+       ▼
+HttpNotifyProvider._server（Node.js http，仅 127.0.0.1）
+       │  Bearer Token 鉴权（可选）→ 解析 JSON body
+       │  emit('notify', NoticeInfo)
+       ▼
+src/main/index.ts
+       │  IPC.NOTIFY_NEW → islandWin.webContents.send
+       ▼
+store/island.ts  applyNotification()
+       ├── mode = 'NOTIFICATION'
+       ├── notification.value = NoticeInfo
+       └── 5s 后自动 → mode = 'COMPACT'
+
+Windows 系统 Toast 通知
+       │  notify.ts 监听
+       └── 同一 NOTIFY_NEW 频道合并上岛
+```
+
+**curl 快速测试：**
+
+```bash
+curl -X POST http://127.0.0.1:19198/notify \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer mytoken" \
+  -d '{"title":"构建成功","body":"main v0.2.0","app":"GitHub Actions"}'
+```
+
 ---
 
 ## 10. 扩展指南
@@ -734,4 +908,4 @@ npm run build
 
 ---
 
-文档版本: 0.3.0 · 最后更新: 2026-04-14
+文档版本: 0.4.0 · 最后更新: 2026-04-15
