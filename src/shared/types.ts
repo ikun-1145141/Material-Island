@@ -44,6 +44,9 @@ export interface AppSettings {
   displayId: number        // 显示器 ID，-1 表示主屏
   silentMode: boolean      // 静默模式开关，默认关闭
   silentModeDelay: number  // 播放多少秒后自动静默（0=不自动），默认 0
+  httpEnabled: boolean     // HTTP 消息接收服务开关，默认关闭
+  httpPort: number         // HTTP 服务监听端口，默认 19198
+  httpToken: string        // Bearer Token，空字符串表示不鉴权
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -52,6 +55,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   displayId: -1,
   silentMode: false,
   silentModeDelay: 0,
+  httpEnabled: false,
+  httpPort: 19198,
+  httpToken: '',
 }
 
 // ── IPC 频道名称常量（避免魔法字符串）────────────────────
@@ -70,4 +76,5 @@ export const IPC = {
   SETTINGS_GET:         'settings:get',
   SETTINGS_SET:         'settings:set',
   SETTINGS_CHANGED:     'settings:changed',
+  HTTP_NOTIFY_TOGGLE:   'http-notify:toggle',
 } as const

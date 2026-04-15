@@ -93,6 +93,53 @@
         </p>
       </section>
 
+      <!-- 消息接收 -->
+      <section class="section">
+        <h3 class="section-title">消息接收</h3>
+        <div class="row">
+          <label class="row-label">HTTP 服务</label>
+          <label class="toggle">
+            <input type="checkbox" v-model="draft.httpEnabled" />
+            <span class="toggle-track" />
+          </label>
+        </div>
+        <template v-if="draft.httpEnabled">
+          <div class="row">
+            <label class="row-label">监听端口</label>
+            <input
+              type="number"
+              min="1024" max="65535" step="1"
+              v-model.number="draft.httpPort"
+              class="text-input"
+            />
+          </div>
+          <div class="row">
+            <label class="row-label">Bearer Token</label>
+            <div class="token-group">
+              <input
+                :type="showToken ? 'text' : 'password'"
+                v-model="draft.httpToken"
+                placeholder="留空则不鉴权"
+                class="text-input flex-1"
+                autocomplete="off"
+              />
+              <button class="icon-btn" @click="showToken = !showToken" :title="showToken ? '隐藏' : '显示'">
+                {{ showToken ? '🙈' : '👁' }}
+              </button>
+              <button class="icon-btn" @click="copyToken" title="复制">
+                📋
+              </button>
+            </div>
+          </div>
+          <p class="section-hint addr-hint">
+            接口地址：<code class="addr">http://127.0.0.1:{{ draft.httpPort }}/notify</code>
+          </p>
+          <p class="section-hint">
+            POST JSON：<code class="addr">{ "title": "…", "body": "…", "app": "…" }</code>
+          </p>
+        </template>
+      </section>
+
       <!-- 操作按钮 -->
       <div class="actions">
         <button class="btn secondary" @click="reset">恢复默认</button>
@@ -107,6 +154,7 @@ import { ref, reactive, onMounted } from 'vue'
 import type { AppSettings } from '@shared/types'
 
 const displays = ref<{ id: number; label: string }[]>([])
+const showToken = ref(false)
 
 const draft = reactive<AppSettings>({
   scale: 1.0,
@@ -114,6 +162,9 @@ const draft = reactive<AppSettings>({
   displayId: -1,
   silentMode: false,
   silentModeDelay: 0,
+  httpEnabled: false,
+  httpPort: 19198,
+  httpToken: '',
 })
 
 const scalePresets = [
@@ -139,7 +190,14 @@ function reset(): void {
   draft.displayId       = -1
   draft.silentMode      = false
   draft.silentModeDelay = 0
+  draft.httpEnabled     = false
+  draft.httpPort        = 19198
+  draft.httpToken       = ''
   window.electron.setSettings({ ...draft })
+}
+
+function copyToken(): void {
+  if (draft.httpToken) navigator.clipboard.writeText(draft.httpToken)
 }
 </script>
 
@@ -344,5 +402,58 @@ function reset(): void {
   color: #79747e;
   margin: 0;
   padding-left: 4px;
+}
+
+/* 文本输入框 */
+.text-input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #2b2930;
+  color: #e6e1e5;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  width: 100px;
+}
+.text-input.flex-1 { flex: 1; width: auto; }
+.text-input:focus { border-color: #d0bcff; }
+
+/* Token 输入框组 */
+.token-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 图标按钮 */
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  background: #2b2930;
+  color: #cac4d0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.1); }
+
+/* 地址提示 */
+.addr-hint { margin-top: 2px; }
+.addr {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  color: #d0bcff;
+  background: rgba(208,188,255,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 </style>

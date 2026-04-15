@@ -4,6 +4,7 @@ import { createTray } from './tray'
 import { loadSettings, saveSettings } from './settings-store'
 import { mediaProvider } from './providers/media'
 import { notifyProvider } from './providers/notify'
+import { httpNotifyProvider } from './providers/http-server'
 import { IPC } from '../shared/types'
 import type { AppSettings } from '../shared/types'
 
@@ -111,10 +112,19 @@ function registerIpcHandlers(): void {
       displayId:       Number(next.displayId) || -1,
       silentMode:      Boolean(next.silentMode),
       silentModeDelay: Math.min(3600, Math.max(0, Math.round(Number(next.silentModeDelay) || 0))),
+      httpEnabled:     Boolean(next.httpEnabled),
+      httpPort:        Math.min(65535, Math.max(1024, Math.round(Number(next.httpPort) || 19198))),
+      httpToken:       String(next.httpToken ?? '').slice(0, 256),
     }
     currentSettings = validated
     saveSettings(validated)
     applySettingsToIsland(win, validated)
+    // 动态重启 HTTP 服务（端口或 Token 变更立即生效）
+    if (validated.httpEnabled) {
+      httpNotifyProvider.start(validated.httpPort, validated.httpToken)
+    } else {
+      httpNotifyProvider.stop()
+    }
     // 通知 island 渲染层更新 CSS 缩放
     win.webContents.send(IPC.SETTINGS_CHANGED, validated)
   })
@@ -137,9 +147,18 @@ function startProviders(): void {
     win?.webContents.send(IPC.NOTIFY_NEW, notice)
   })
   notifyProvider.start(3000)
+
+  // HTTP 消息接收服务：启动时按设置决定是否开启
+  httpNotifyProvider.on('new', (notice) => {
+    win?.webContents.send(IPC.NOTIFY_NEW, notice)
+  })
+  if (currentSettings.httpEnabled) {
+    httpNotifyProvider.start(currentSettings.httpPort, currentSettings.httpToken)
+  }
 }
 
 function stopProviders(): void {
   mediaProvider.stop()
   notifyProvider.stop()
+  httpNotifyProvider.stop()
 }
