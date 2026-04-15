@@ -90,7 +90,10 @@ Material-Island/
 ├── tsconfig.json                # 基础 TS 配置
 ├── tsconfig.node.json           # 主进程 / preload 配置
 ├── tsconfig.web.json            # 渲染层配置
+├── scripts/
+│   └── gen-icon.mjs             # SVG → 多尺寸 ICO 生成脚本（prebuild 自动执行）
 ├── resources/
+│   ├── icon.ico                 # 安装包图标（gen-icon.mjs 生成，MD3 风格）
 │   └── music_cast.png           # 系统托盘图标
 │
 ├── sidecar/
@@ -291,13 +294,16 @@ if (expanded) {
 
 `AppSettings` 字段：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `scale` | `number` | 缩放倍数，0.5～2.0 |
-| `topOffset` | `number` | 距顶部偏移像素 |
-| `displayId` | `number` | 显示器 ID，-1 表示主屏 |
-| `silentMode` | `boolean` | 静默模式开关 |
-| `silentModeDelay` | `number` | 自动静默延迟（秒），0=不自动 |
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `scale` | `number` | `1.0` | 缩放倍数，0.5～2.0 |
+| `topOffset` | `number` | `0` | 距顶部偏移像素 |
+| `displayId` | `number` | `-1` | 显示器 ID，-1 表示主屏 |
+| `silentMode` | `boolean` | `false` | 静默模式开关 |
+| `silentModeDelay` | `number` | `0` | 自动静默延迟（秒），0=不自动 |
+| `httpEnabled` | `boolean` | `false` | 是否启动本地 HTTP 消息服务 |
+| `httpPort` | `number` | `19198` | HTTP 服务监听端口（1024-65535）|
+| `httpToken` | `string` | `""` | Bearer Token 鉴权，空字符串表示不鉴权 |
 
 ---
 
@@ -908,4 +914,4 @@ npm run build
 
 ---
 
-文档版本: 0.4.0 · 最后更新: 2026-04-15
+文档版本: 0.4.1 · 最后更新: 2026-04-15
