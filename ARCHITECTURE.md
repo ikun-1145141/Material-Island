@@ -223,6 +223,38 @@ seek:134.5\n   # seek 到 134.5 秒
 - elapsed 插值上限 3600s，避免 `TimeSpan.MinValue` 导致溢出
 - 位置和时长同时为 0 时跳过推送
 
+**WinIsland 风格 Session 选取（`GetBestMusicSession()`）：**
+
+与 WinIsland 采用相同策略，而非直接调用 `GetCurrentSession()`：
+
+1. 调用 `mgr.GetSessions()` 枚举全部媒体会话
+2. 跳过 `PlaybackType == Video` 的视频会话
+3. 优先返回状态为 `Playing` 的音乐会话；无则返回第一个非视频备选
+4. 均无时回退 `manager.GetCurrentSession()`
+
+**WinIsland 风格事件驱动轮询：**
+
+- 订阅 `SessionsChanged` COM 事件 → 置 `sessionChangedFlag = true`，让主循环跳过当前延迟立即处理新 Session
+- 基础轮询间隔 **300ms**（与 WinIsland 一致）
+
+**本地计时器插值（Local Timer）：**
+
+酷狗等应用通过 SMTC 上报的 `pos=0 / duration=0 / lastUpdated=MinValue`，是其 SMTC 实现缺陷。C# sidecar 采用本地计时器绕过：
+
+```csharp
+// 检测到新曲目或 Playing 状态开始时重置基准
+_basePos  = smtcPosition;   // SMTC 报 0 时即为 0
+_baseTime = DateTimeOffset.UtcNow;
+
+// 每次 tick 计算：基准位置 + 已过时间
+var elapsed    = (DateTimeOffset.UtcNow - _baseTime).TotalSeconds;
+var outPosition = _basePos + elapsed;
+```
+
+- 暂停时冻结 `_basePos`，不再累加 elapsed
+- elapsed 上限 3600s，防止 `TimeSpan.MinValue` 溢出
+- 已知限制：若 SMTC 始终报 0（如酷狗），position 从 0 开始计时，无法知道真实播放位置。WinIsland 存在相同限制。
+
 **`src/main/providers/media.ts`** — sidecar 守护器
 
 ```
@@ -336,7 +368,7 @@ if (expanded) {
 | `onNotification(cb)` | M→R | 订阅系统通知 |
 | `onWindowBlur(cb)` | M→R | 订阅窗口失去焦点事件（兜底收起） |
 | `onSettingsChanged(cb)` | M→R | 订阅设置变更（用于更新 CSS 缩放变量） |
-| `onLyricsLine(cb)` | M→R | 订阅当前歌词行变化，空字符串表示无歌词 |
+| `onLyricsData(cb)` | M→R | 订阅完整歌词数组 + 时长（秒）更新，切歌/停止时推送空数组 |
 
 ---
 
@@ -369,10 +401,26 @@ const SILENT_BAR_SIZE    = { width: 120, height: 6  }  // 静默模式极细横�
 | `silentModeEnabled` | `boolean` | 设置项：静默模式开关 |
 | `mediaInfo` | `MediaInfo \| null` | 最新完整媒体信息（含缩略图） |
 | `notification` | `NoticeInfo \| null` | 当前通知 |
-| `position` | `number` | 当前播放位置（秒） |
-| `duration` | `number` | 总时长（秒） |
-| `currentLyric` | `string` | 当前歌词行文本，空字符串表示无歌词 |
+| `position` | `number` | 当前播放位置（秒），由 RAF 60fps 插值更新 |
+| `duration` | `number` | 总时长（秒），优先取歌词 API 返回值，其次 SMTC |
+| `lyricsData` | `LyricLine[]` | 完整歌词数组（从主进程 `LYRICS_DATA` 推送） |
+| `currentLyric` | `string` | 当前歌词行（computed，RAF 帧内二分搜索） |
 | `lyricsEnabled` | `boolean` | 设置项：歌词功能开关（用于调整岛展开高度） |
+
+**RAF 60fps 位置插值：**
+
+```typescript
+// requestAnimationFrame 驱动的平滑插值，消除 300ms 轮询的跳变感
+let _syncPos  = 0   // C# 推送的最新基准位置（秒）
+let _syncTime = 0   // 对应的本地时间戳（ms）
+
+// 每帧计算：
+position.value = _syncPos + (Date.now() - _syncTime) / 1000
+```
+
+- `onMediaPosition` 收到 C# 推送时仅更新 `_syncPos / _syncTime`
+- RAF 在每帧内加上亚 tick 经过时间，实现视觉上连续的进度
+- 换曲时 `applyMediaUpdate` 重置 `_syncPos = 0 / duration = 0 / lyricsData = []`
 
 **关键动作：**
 
@@ -667,12 +715,18 @@ Settings.vue 中新增「消息接收」分区：
 ```
 MediaProvider.emit('update', info)  →  LyricsProvider.handleMediaUpdate(info)
     曲目变化 → 异步 _fetchLyrics()
-    停止/无会话 → emit('line', '')    (清空渲染层)
-
-MediaProvider.emit('position', pos) →  LyricsProvider.handlePosition(pos)
-    更新 _positionMs → _tick() 二分搜索
-    文本变化 → emit('line', text)    (IPC LYRICS_LINE → 渲染层)
+        成功 → emit('data', lines, durationSec)  (IPC LYRICS_DATA → 渲染层)
+    停止/无会话 → emit('data', [], 0)             (清空渲染层)
 ```
+
+与旧方案（主进程实时 tick + 推送当前行文本）相比，新方案将整组 `LyricLine[]` 一次性推送给渲染层，由渲染层的 RAF 循环在每帧内完成二分搜索。好处：
+
+- 主进程无需跟踪播放位置，解耦更彻底
+- 渲染层始终与 `position.value` 严格同步，不存在主→渲延迟
+
+**`durationSec` 时长传递：**
+
+lrclib 响应包含 `duration`（秒），163 搜索结果包含 `duration`（毫秒）。`lyrics.ts` 在 `emit('data', lines, durationSec)` 时一并传出，渲染层优先用此值覆盖 SMTC 上报的时长（解决酷狗 duration=0 问题）。
 
 **歌词拉取流程（双源 + fallback）：**
 
@@ -703,17 +757,19 @@ fetch_lyrics(title, artist, duration)
 - `Map<timeMs, text>` 去重后转 `LyricLine[]` 升序排列
 - 网易云翻译歌词（`tlyric`）与主歌词同时间戳时合并（`\n` 分隔）
 
-**定位当前行：**
+**定位当前行（渲染层 RAF 内执行）：**
 
 ```typescript
-// 二分搜索 ≤ positionMs + delayMs 的最后一条
-let lo = 0, hi = lyrics.length - 1
+// store/island.ts — 每帧 RAF 回调中调用
+const t = position.value * 1000 + lyricsDelay.value  // ms
+// 二分搜索 ≤ t 的最后一条
+let lo = 0, hi = lyricsData.value.length - 1
 while (lo < hi) {
   const mid = (lo + hi + 1) >> 1
-  if (lyrics[mid].timeMs <= t) lo = mid
+  if (lyricsData.value[mid].timeMs <= t) lo = mid
   else hi = mid - 1
 }
-return lyrics[lo].text
+currentLyric.value = lyricsData.value[lo]?.text ?? ''
 ```
 
 **抗并发设计：**
@@ -758,7 +814,7 @@ return lyrics[lo].text
 | `SETTINGS_SET` | `settings:set` | R→M | 更新设置 |
 | `SETTINGS_CHANGED` | `settings:changed` | M→R | 设置已更新通知 |
 | `HTTP_NOTIFY_TOGGLE` | `http-notify:toggle` | R→M | 动态启停 HTTP 服务（端口/Token 变更时） |
-| `LYRICS_LINE` | `lyrics:line` | M→R | 歌词行变化推送（空 = 无歌词） |
+| `LYRICS_DATA` | `lyrics:data` | M→R | 完整歌词数组 `LyricLine[]` + 时长秒数推送；切歌/停止时推送空数组 |
 
 ---
 
@@ -840,13 +896,20 @@ Windows SMTC API
        │  WinRT
        ▼
 SmtcServer.exe (C# sidecar)
-       │  stdout JSON 行
+  GetBestMusicSession()  ← 遍历 GetSessions()，优先 Playing 音乐 session
+  SessionsChanged 事件   ← 立即唤醒主循环（无需等 300ms）
+  Local Timer 插值       ← _basePos + (UtcNow - _baseTime).TotalSeconds
+       │  stdout JSON 行（300ms/tick）
        ▼
 MediaProvider._spawn() → readline 解析
        ├── emit('update', MediaInfo)   ──► MEDIA_UPDATE  → store.applyMediaUpdate()
-       └── emit('position', MediaPos)  ──► MEDIA_POSITION → store.position / duration
+       │                                                   ├── 换曲：重置 pos/dur/lyrics
+       │                                                   └── pos>0 时更新 _syncPos
+       └── emit('position', MediaPos)  ──► MEDIA_POSITION → 更新 _syncPos / _syncTime
                                                                     │
-                                                         Music.vue 进度条渲染
+                                                     RAF 60fps 插值 → position.value
+                                                                    │
+                                                         Music.vue 进度条 + 歌词定位
 ```
 
 ### Seek 流
@@ -904,6 +967,29 @@ SmtcServer stdout → MEDIA_POSITION → store.position 更新
 
           [横条] 点击 → exitSilent()
                ↳ isSilent=false + _startSilentTimer() 重新倒计时
+```
+
+### 歌词数据流
+
+```
+MediaProvider.emit('update', info)  (曲目变化)
+       │
+       ▼
+LyricsProvider._fetchLyrics(title, artist, durationSec)
+       ├── source='lrclib': GET lrclib.net/api/get → /api/search
+       └── source='163':    GET music.163.com/api/search → /api/song/lyric
+  (antiFetch id 防竞态：切歌时丢弃过期结果)
+       │
+       ▼
+emit('data', lines: LyricLine[], durationSec: number)
+       │  IPC LYRICS_DATA
+       ▼
+store/island.ts  onLyricsData()
+       ├── lyricsData.value = lines
+       └── durationSec > 0 → duration.value = durationSec  (覆盖 SMTC 上报值)
+
+RAF 每帧:
+  currentLyric = binarySearch(lyricsData, position * 1000 + lyricsDelay)
 ```
 
 ### HTTP / Windows 通知上岛流
@@ -1009,4 +1095,4 @@ npm run build
 
 ---
 
-文档版本: 0.4.1 · 最后更新: 2026-04-15
+文档版本: 0.5.0 · 最后更新: 2026-04-21

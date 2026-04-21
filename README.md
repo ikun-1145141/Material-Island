@@ -42,7 +42,7 @@
 | 状态 | 触发条件 | 说明 |
 |------|----------|------|
 | **紧凑** | 默认 | 显示系统时钟，悬停展开 |
-| **音乐** | 系统有媒体会话（SMTC）活跃 | 封面缩略图、歌曲、艺术家、播放源、进度条 |
+| **音乐** | 系统有媒体会话（SMTC）活跃 | 封面缩略图、歌曲、艺术家、播放源、进度条；开启歌词后紧凑态展示当前歌词行 |
 | **通知** | 收到 Windows 系统通知 或 HTTP 推送 | 应用名、标题、正文，5 秒自动收回 |
 | **计时** | 手动激活 | 秒表，支持暂停 / 重置 |
 | **静默** | 手动或自动倒计时触发 | 岛缩为顶部极细横条，点击恢复正常岛形态 |
@@ -65,6 +65,13 @@
 - 拖拽进度条 seek 到任意位置
 - 专辑封面（58×58，从 SMTC 读取）
 - 播放来源应用名称标签
+
+**歌词：**
+
+- 自动拉取 LRC 歌词（lrclib.net 主源 / 网易云备选，可互切）
+- **紧凑态**替换歌名显示当前歌词行
+- 展开卡片内实时歌词滚动，带淡入淡出过渡
+- 歌词时间偏移可在设置页调整（−500ms ~ +500ms）
 
 **窗口行为：**
 
@@ -101,7 +108,8 @@
 | **配色系统** | `@material/material-color-utilities`（Google 官方 M3 算法）|
 | **图标** | Material Symbols Rounded（`@fontsource-variable/material-symbols-rounded`）|
 | **语言** | TypeScript 5（全量类型覆盖，零 `any`）|
-| **SMTC sidecar** | C# / .NET 8 — `SmtcServer.exe`，读取 Windows 媒体会话 |
+| **SMTC sidecar** | C# / .NET 8 — `SmtcServer.exe`，读取 Windows 媒体会话，WinIsland 风格 Session 选择 + 本地计时器 |
+| **歌词引擎** | Node.js `providers/lyrics.ts`，lrclib.net / 网易云双源，RAF 帧内二分搜索 |
 | **HTTP 服务** | Node.js 内置 `http` 模块，仅绑定 127.0.0.1 |
 
 ## 快速开始
@@ -156,7 +164,8 @@ Material-Island/
     │   └── providers/
     │       ├── media.ts     # 启动/守护 SmtcServer sidecar，解析媒体事件
     │       ├── notify.ts    # Windows 系统通知监听
-    │       └── http-server.ts# 本地 HTTP 消息接收（仅 127.0.0.1）
+    │       ├── http-server.ts# 本地 HTTP 消息接收（仅 127.0.0.1）
+    │       └── lyrics.ts    # 歌词拉取/LRC 解析/时长传递（lrclib + 网易云）
     │
     ├── preload/
     │   ├── index.ts         # contextBridge 安全桥接（最小接口原则）
