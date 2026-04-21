@@ -1,6 +1,12 @@
 // src/shared/types.ts
 // 所有模块共享的类型契约 — 这是跨层通信的唯一数据规范
 
+// ── 歌词行 ────────────────────────────────────────────────
+export interface LyricLine {
+  timeMs: number   // 时间戳，毫秒
+  text: string     // 歌词文本（可含 \n 分隔的翻译行）
+}
+
 // ── 媒体信息 ──────────────────────────────────────────────
 export interface MediaInfo {
   title: string
@@ -47,6 +53,10 @@ export interface AppSettings {
   httpEnabled: boolean     // HTTP 消息接收服务开关，默认关闭
   httpPort: number         // HTTP 服务监听端口，默认 19198
   httpToken: string        // Bearer Token，空字符串表示不鉴权
+  lyricsEnabled: boolean   // 歌词功能开关，默认关闭
+  lyricsSource: string     // 歌词数据源：'lrclib' | '163'，默认 'lrclib'
+  lyricsFallback: boolean  // 主源失败后尝试另一源，默认 true
+  lyricsDelay: number      // 歌词时间偏移（ms，正值提前显示），默认 0
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -58,6 +68,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   httpEnabled: false,
   httpPort: 19198,
   httpToken: '',
+  lyricsEnabled: false,
+  lyricsSource: 'lrclib',
+  lyricsFallback: true,
+  lyricsDelay: 0,
 }
 
 // ── IPC 频道名称常量（避免魔法字符串）────────────────────
@@ -77,4 +91,7 @@ export const IPC = {
   SETTINGS_SET:         'settings:set',
   SETTINGS_CHANGED:     'settings:changed',
   HTTP_NOTIFY_TOGGLE:   'http-notify:toggle',
+  LYRICS_LINE:          'lyrics:line',
+  /** 主进程推送完整歌词数组（曲目变化/获取成功后）*/
+  LYRICS_DATA:          'lyrics:data',
 } as const

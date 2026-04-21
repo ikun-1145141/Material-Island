@@ -31,7 +31,18 @@ Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
+*.sln
 *.sw?
+.vs/
+.idea/
+*.user
 
 # ── TypeScript incremental build info ─────────────────────
 *.tsbuildinfo
+
+# ── Debug & temp files ────────────────────────────────────
+smtc-debug.txt
+*.tmp
+
+# ── Package manager lock files (optional – remove if you want to commit them) ─
+# package-lock.json

@@ -21,6 +21,7 @@
    - 5.6 [动效系统](#56-动效系统)
    - 5.7 [M3 主题系统](#57-m3-主题系统)
    - 5.8 [消息接收模块](#58-消息接收模块)
+   - 5.9 [歌词系统](#59-歌词系统)
 6. [IPC 频道一览](#6-ipc-频道一览)
 7. [窗口管理策略](#7-窗口管理策略)
 8. [模块化设计](#8-模块化设计)
@@ -48,6 +49,7 @@ Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通
 | 静默模式 | 岛自动缩为 120×6px 顶部横条，点击恢复；鼠标在岛内自动暂停静默倒计时，鼠标移出后重启 |
 | 外部 HTTP 消息推送 | 本地 HTTP Server（仅 localhost），外部程序 / 脚本 POST `/notify` 即可将消息上岛 |
 | Windows 原生通知上岛 | 监听 Windows Toast 通知事件，将系统弹窗同步到岛的 NOTIFICATION 状态 |
+| 歌词显示 | 自动拉取 LRC 歌词（lrclib.net / 网易云），展开态实时同步带淡入淡出过渡 |
 | 持久化设置 | electron-store，JSON 文件落地 |
 | 系统托盘 | Electron `Tray`，右键菜单 + 双击打开设置 |
 | M3 动态配色 | CSS Custom Properties + `@material/material-color-utilities` |
@@ -77,6 +79,9 @@ Material Island 是一个运行在 **Windows** 桌面端的 **灵动岛风格通
 M3 设计系统
 ├── @material/material-color-utilities  # Google 官方 M3 配色算法
 └── 自定义 CSS Token 系统              # --md-sys-color-* 变量
+
+歌词
+└── providers/lyrics.ts                 # lrclib.net 字节 + 网易云 LRC 二分搜索
 ```
 
 ---
@@ -113,7 +118,8 @@ Material-Island/
     │   └── providers/
     │       ├── media.ts         # 启动/守护 SmtcServer，解析媒体事件
     │       ├── notify.ts        # 系统通知监听
-    │       └── http-server.ts   # 本地 HTTP 消息接收服务（仅 localhost）
+    │       ├── http-server.ts   # 本地 HTTP 消息接收服务（仅 localhost）
+    │       └── lyrics.ts        # 歌词拉取、LRC 解析、二分搜索定位当前行
     │
     ├── preload/
     │   ├── index.ts             # contextBridge 安全桥接
@@ -304,6 +310,10 @@ if (expanded) {
 | `httpEnabled` | `boolean` | `false` | 是否启动本地 HTTP 消息服务 |
 | `httpPort` | `number` | `19198` | HTTP 服务监听端口（1024-65535）|
 | `httpToken` | `string` | `""` | Bearer Token 鉴权，空字符串表示不鉴权 |
+| `lyricsEnabled` | `boolean` | `false` | 歌词功能开关 |
+| `lyricsSource` | `string` | `"lrclib"` | 歌词数据源：`'lrclib'` \| `'163'` |
+| `lyricsFallback` | `boolean` | `true` | 主源失败后是否尝试另一源 |
+| `lyricsDelay` | `number` | `0` | 歌词时间偏移（ms，正值提前显示） |
 
 ---
 
@@ -326,6 +336,7 @@ if (expanded) {
 | `onNotification(cb)` | M→R | 订阅系统通知 |
 | `onWindowBlur(cb)` | M→R | 订阅窗口失去焦点事件（兜底收起） |
 | `onSettingsChanged(cb)` | M→R | 订阅设置变更（用于更新 CSS 缩放变量） |
+| `onLyricsLine(cb)` | M→R | 订阅当前歌词行变化，空字符串表示无歌词 |
 
 ---
 
@@ -360,6 +371,8 @@ const SILENT_BAR_SIZE    = { width: 120, height: 6  }  // 静默模式极细横�
 | `notification` | `NoticeInfo \| null` | 当前通知 |
 | `position` | `number` | 当前播放位置（秒） |
 | `duration` | `number` | 总时长（秒） |
+| `currentLyric` | `string` | 当前歌词行文本，空字符串表示无歌词 |
+| `lyricsEnabled` | `boolean` | 设置项：歌词功能开关（用于调整岛展开高度） |
 
 **关键动作：**
 
@@ -645,6 +658,86 @@ Settings.vue 中新增「消息接收」分区：
 
 ---
 
+### 5.9 歌词系统
+
+**`src/main/providers/lyrics.ts`**
+
+纯 Node.js 模块，无需修改 C# sidecar，由 `media.ts` 事件驱动。
+
+```
+MediaProvider.emit('update', info)  →  LyricsProvider.handleMediaUpdate(info)
+    曲目变化 → 异步 _fetchLyrics()
+    停止/无会话 → emit('line', '')    (清空渲染层)
+
+MediaProvider.emit('position', pos) →  LyricsProvider.handlePosition(pos)
+    更新 _positionMs → _tick() 二分搜索
+    文本变化 → emit('line', text)    (IPC LYRICS_LINE → 渲染层)
+```
+
+**歌词拉取流程（双源 + fallback）：**
+
+```
+fetch_lyrics(title, artist, duration)
+       │
+       ├── source = 'lrclib'
+       │     └── _fetchLrclib(精确) → 失败 → _fetchLrclib(搜索) → 失败
+       │           └── fallback → _fetch163()
+       │
+       └── source = '163'
+             └── _fetch163() → 失败
+                   └── fallback → _fetchLrclib()
+```
+
+**API 端点：**
+
+| 数据源 | 接口 |
+|--------|------|
+| lrclib 精确 | `GET https://lrclib.net/api/get?track_name=&artist_name=&duration=` |
+| lrclib 搜索 | `GET https://lrclib.net/api/search?q=` |
+| 网易云搜索 | `GET https://music.163.com/api/search/get/web?s=&type=1&limit=10` |
+| 网易云歌词 | `GET https://music.163.com/api/song/lyric?id=&lv=1&kv=1&tv=-1` |
+
+**LRC 解析：**
+
+- 正则 `[mm:ss.xx]` 提取时间戳（支持 1-3 位小数）
+- `Map<timeMs, text>` 去重后转 `LyricLine[]` 升序排列
+- 网易云翻译歌词（`tlyric`）与主歌词同时间戳时合并（`\n` 分隔）
+
+**定位当前行：**
+
+```typescript
+// 二分搜索 ≤ positionMs + delayMs 的最后一条
+let lo = 0, hi = lyrics.length - 1
+while (lo < hi) {
+  const mid = (lo + hi + 1) >> 1
+  if (lyrics[mid].timeMs <= t) lo = mid
+  else hi = mid - 1
+}
+return lyrics[lo].text
+```
+
+**抗并发设计：**
+
+每次开始新请求时递增 `_fetchId`，异步结果返回时检查 ID 是否匹配，丢弃已切歌的过期结果。
+
+**`AppSettings` 相关字段：**
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `lyricsEnabled` | `boolean` | `false` | 歌词功能开关 |
+| `lyricsSource` | `string` | `"lrclib"` | 主数据源 |
+| `lyricsFallback` | `boolean` | `true` | 主源失败后备选 |
+| `lyricsDelay` | `number` | `0` | 时间偏移 ms（-3000~+3000） |
+
+**渲染层展示（`Music.vue`）：**
+
+- 展开态在艺术家名下方添加 `.lyric-wrap` 容器，`v-if="store.lyricsEnabled"`
+- `<transition name="lyric-fade" mode="out-in">` + `:key="store.currentLyric"` 触发 fade+slide 动画
+- 文本一行截断（`text-overflow: ellipsis`），颜色使用 `--md-sys-color-primary`
+- 启用歌词时岛展开高度从 135px 自动增加到 162px（`MUSIC_LYRICS_SIZE`）
+
+---
+
 ## 6. IPC 频道一览
 
 所有频道名称集中定义在 `src/shared/types.ts` 的 `IPC` 常量对象，避免魔法字符串。
@@ -665,6 +758,7 @@ Settings.vue 中新增「消息接收」分区：
 | `SETTINGS_SET` | `settings:set` | R→M | 更新设置 |
 | `SETTINGS_CHANGED` | `settings:changed` | M→R | 设置已更新通知 |
 | `HTTP_NOTIFY_TOGGLE` | `http-notify:toggle` | R→M | 动态启停 HTTP 服务（端口/Token 变更时） |
+| `LYRICS_LINE` | `lyrics:line` | M→R | 歌词行变化推送（空 = 无歌词） |
 
 ---
 
@@ -708,7 +802,8 @@ src/shared/types.ts                  ← 所有模块共同依赖的类型契约
         ├──► src/main/providers/*    (采集层：解析 JSON，emit 事件)
         │    ├── media.ts            (SMTC 媒体会话)
         │    ├── notify.ts           (Windows 系统通知)
-        │    └── http-server.ts      (本地 HTTP 消息接收，127.0.0.1 only)
+        │    ├── http-server.ts      (本地 HTTP 消息接收，127.0.0.1 only)
+        │    └── lyrics.ts           (歌词拉取/解析/定位，由 media 事件驱动)
         │         │ EventEmitter
         │         ▼
         │    src/main/index.ts       (IPC 转发层)

@@ -15,9 +15,16 @@
         <img v-if="info.thumbnailDataUrl" :src="info.thumbnailDataUrl" alt="" />
         <span v-else>♫</span>
       </div>
-      <span class="pill-title">{{ info.title || '未知曲目' }}</span>
-      <span v-if="info.artist" class="pill-sep"> · </span>
-      <span v-if="info.artist" class="pill-artist">{{ info.artist }}</span>
+      <template v-if="store.lyricsEnabled && store.currentLyric">
+        <transition name="lyric-fade" mode="out-in">
+          <span class="pill-lyric" :key="store.currentLyric">{{ store.currentLyric }}</span>
+        </transition>
+      </template>
+      <template v-else>
+        <span class="pill-title">{{ info.title || '未知曲目' }}</span>
+        <span v-if="info.artist" class="pill-sep"> · </span>
+        <span v-if="info.artist" class="pill-artist">{{ info.artist }}</span>
+      </template>
       <div class="spectrum">
         <span class="bar" :class="{ active: isPlaying }"></span>
         <span class="bar" :class="{ active: isPlaying }" style="animation-delay:.15s"></span>
@@ -35,8 +42,17 @@
       <!-- art 占位，flex 撑高已由 .art 固定高度控制 -->
       <div class="info-col">
         <span v-if="info.source" class="source-badge">{{ info.source }}</span>
-        <p class="exp-title">{{ info.title || '未知曲目' }}</p>
-        <p class="exp-artist">{{ info.artist || '未知艺术家' }}</p>
+        <!-- 歌词优先：有歌词时替换标题/艺术家显示 -->
+        <template v-if="store.lyricsEnabled && store.currentLyric">
+          <transition name="lyric-fade" mode="out-in">
+            <p class="exp-title exp-lyric" :key="store.currentLyric">{{ store.currentLyric }}</p>
+          </transition>
+          <p class="exp-artist">{{ info.title || '未知曲目' }}</p>
+        </template>
+        <template v-else>
+          <p class="exp-title">{{ info.title || '未知曲目' }}</p>
+          <p class="exp-artist">{{ info.artist || '未知艺术家' }}</p>
+        </template>
         <div class="progress-area">
           <div
             class="progress-bar"
@@ -266,6 +282,33 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
   margin: 0;
   line-height: 1.2;
 }
+/* 歌词 */
+.pill-lyric {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-sys-color-primary, #d0bcff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.exp-lyric {
+  color: var(--md-sys-color-primary, #d0bcff) !important;
+  font-weight: 500;
+}
+.lyric-fade-enter-active,
+.lyric-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.lyric-fade-enter-from {
+  opacity: 0;
+  transform: translateY(5px);
+}
+.lyric-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
+}
 .progress-area {
   display: flex;
   flex-direction: column;
@@ -285,7 +328,6 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
   height: 100%;
   border-radius: 99px;
   background: var(--md-sys-color-primary, #d0bcff);
-  transition: width 0.5s linear;
   pointer-events: none;
 }
 .progress-bar.dragging .progress-fill { transition: none; }

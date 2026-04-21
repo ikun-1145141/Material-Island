@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { MediaInfo, NoticeInfo, MediaPosition, AppSettings } from '../shared/types'
+import type { MediaInfo, NoticeInfo, MediaPosition, AppSettings, LyricLine } from '../shared/types'
 import { IPC } from '../shared/types'
 
 // 严格最小接口原则：只暴露渲染层实际需要的方法
@@ -102,5 +102,16 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = (_: Electron.IpcRendererEvent, s: AppSettings): void => cb(s)
     ipcRenderer.on(IPC.SETTINGS_CHANGED, handler)
     return () => ipcRenderer.off(IPC.SETTINGS_CHANGED, handler)
+  },
+
+  /**
+   * 订阅歌词数据更新（主进程 → 渲染层）
+   * lines 为空数组表示无歌词 / 歌曲切换
+   * 返回取消订阅函数
+   */
+  onLyricsData: (cb: (lines: LyricLine[], durationSec: number) => void): (() => void) => {
+    const handler = (_: Electron.IpcRendererEvent, lines: LyricLine[], durationSec: number): void => cb(lines, durationSec)
+    ipcRenderer.on(IPC.LYRICS_DATA, handler)
+    return () => ipcRenderer.off(IPC.LYRICS_DATA, handler)
   },
 })

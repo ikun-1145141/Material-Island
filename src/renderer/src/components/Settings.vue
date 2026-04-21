@@ -139,7 +139,50 @@
           </p>
         </template>
       </section>
-
+      <!-- 歌词 -->
+      <section class="section">
+        <h3 class="section-title">歌词</h3>
+        <div class="row">
+          <label class="row-label">启用歌词</label>
+          <label class="toggle">
+            <input type="checkbox" v-model="draft.lyricsEnabled" />
+            <span class="toggle-track" />
+          </label>
+        </div>
+        <template v-if="draft.lyricsEnabled">
+          <div class="row">
+            <label class="row-label">数据源</label>
+            <select v-model="draft.lyricsSource" class="select">
+              <option value="lrclib">lrclib.net（国际歌曲）</option>
+              <option value="163">网易云音乐（中文歌曲）</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="row-label">备用源备选</label>
+            <label class="toggle">
+              <input type="checkbox" v-model="draft.lyricsFallback" />
+              <span class="toggle-track" />
+            </label>
+          </div>
+          <div class="row">
+            <label class="row-label">时间偏移</label>
+            <div class="slider-group">
+              <input
+                type="range"
+                min="-3000" max="3000" step="100"
+                v-model.number="draft.lyricsDelay"
+                class="slider"
+              />
+              <span class="slider-val">
+                {{ draft.lyricsDelay === 0 ? '不偏移' : (draft.lyricsDelay > 0 ? '+' : '') + draft.lyricsDelay + 'ms' }}
+              </span>
+            </div>
+          </div>
+          <p class="section-hint" v-if="draft.lyricsFallback">
+            主源查询失败后自动尝试另一数据源
+          </p>
+        </template>
+      </section>
       <!-- 操作按钮 -->
       <div class="actions">
         <button class="btn secondary" @click="reset">恢复默认</button>
@@ -165,6 +208,10 @@ const draft = reactive<AppSettings>({
   httpEnabled: false,
   httpPort: 19198,
   httpToken: '',
+  lyricsEnabled: false,
+  lyricsSource: 'lrclib',
+  lyricsFallback: true,
+  lyricsDelay: 0,
 })
 
 const scalePresets = [
@@ -193,6 +240,10 @@ function reset(): void {
   draft.httpEnabled     = false
   draft.httpPort        = 19198
   draft.httpToken       = ''
+  draft.lyricsEnabled   = false
+  draft.lyricsSource    = 'lrclib'
+  draft.lyricsFallback  = true
+  draft.lyricsDelay     = 0
   window.electron.setSettings({ ...draft })
 }
 

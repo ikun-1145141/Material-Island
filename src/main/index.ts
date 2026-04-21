@@ -5,6 +5,7 @@ import { loadSettings, saveSettings } from './settings-store'
 import { mediaProvider } from './providers/media'
 import { notifyProvider } from './providers/notify'
 import { httpNotifyProvider } from './providers/http-server'
+import { lyricsProvider } from './providers/lyrics'
 import { IPC } from '../shared/types'
 import type { AppSettings } from '../shared/types'
 
@@ -115,6 +116,10 @@ function registerIpcHandlers(): void {
       httpEnabled:     Boolean(next.httpEnabled),
       httpPort:        Math.min(65535, Math.max(1024, Math.round(Number(next.httpPort) || 19198))),
       httpToken:       String(next.httpToken ?? '').slice(0, 256),
+      lyricsEnabled:   Boolean(next.lyricsEnabled),
+      lyricsSource:    ['lrclib', '163'].includes(String(next.lyricsSource)) ? String(next.lyricsSource) : 'lrclib',
+      lyricsFallback:  Boolean(next.lyricsFallback),
+      lyricsDelay:     Math.min(5000, Math.max(-5000, Math.round(Number(next.lyricsDelay) || 0))),
     }
     currentSettings = validated
     saveSettings(validated)
@@ -125,6 +130,10 @@ function registerIpcHandlers(): void {
     } else {
       httpNotifyProvider.stop()
     }
+    // 歌词配置热更新
+    lyricsProvider.setEnabled(validated.lyricsEnabled)
+    lyricsProvider.setSource(validated.lyricsSource)
+    lyricsProvider.setFallback(validated.lyricsFallback)
     // 通知 island 渲染层更新 CSS 缩放
     win.webContents.send(IPC.SETTINGS_CHANGED, validated)
   })
@@ -136,11 +145,20 @@ function startProviders(): void {
   // 媒体信息：轮询 Windows SMTC，有变化时推送到渲染层
   mediaProvider.on('update', (info) => {
     win?.webContents.send(IPC.MEDIA_UPDATE, info)
+    lyricsProvider.handleMediaUpdate(info)
   })
   mediaProvider.on('position', (pos) => {
     win?.webContents.send(IPC.MEDIA_POSITION, pos)
   })
   mediaProvider.start()
+
+  // 歌词行推送
+  lyricsProvider.on('data', (lines, durationSec: number) => {
+    win?.webContents.send(IPC.LYRICS_DATA, lines, durationSec ?? 0)
+  })
+  lyricsProvider.setEnabled(currentSettings.lyricsEnabled)
+  lyricsProvider.setSource(currentSettings.lyricsSource)
+  lyricsProvider.setFallback(currentSettings.lyricsFallback)
 
   // 系统通知：轮询通知数据库，有新条目时推送
   notifyProvider.on('new', (notice) => {
@@ -161,4 +179,5 @@ function stopProviders(): void {
   mediaProvider.stop()
   notifyProvider.stop()
   httpNotifyProvider.stop()
+  lyricsProvider.removeAllListeners()
 }

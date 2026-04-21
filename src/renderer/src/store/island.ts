@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { MediaInfo, NoticeInfo } from '@shared/types'
+import type { MediaInfo, NoticeInfo, LyricLine } from '@shared/types'
 
 // 岛的全部可能状态（添加新状态在这里扩展即可）
 export type IslandMode = 'COMPACT' | 'MUSIC' | 'NOTIFICATION' | 'TIMER'
@@ -12,6 +12,8 @@ const SIZE_MAP: Record<IslandMode, { width: number; height: number }> = {
   NOTIFICATION: { width: 340, height: 80  },
   TIMER:        { width: 260, height: 60  },
 }
+/** 音乐展开 + 歌词启用时额外高度 */
+const MUSIC_LYRICS_SIZE = { width: 360, height: 162 }
 
 const COMPACT_SIZE       = { width: 210, height: 36 }
 /** 音乐播放中但未展开：小丸子稍宽，显示播放图标 */
@@ -34,6 +36,12 @@ export const useIslandStore = defineStore('island', () => {
   const position   = ref(0)
   /** 总时长（秒） */
   const duration   = ref(0)
+  /** 歌词功能是否启用（与设置同步） */
+  const lyricsEnabled = ref(false)
+  /** 当前曲目的完整歌词数据（空数组表示无歌词） */
+  const lyricsData    = ref<LyricLine[]>([])
+  /** 歌词时间偏移 ms（正値 = 提前显示，负値 = 延迟） */
+  const lyricsDelay   = ref(0)
 
   // ── 静默模式状态 ──────────────────────────────────────────
   const isSilent          = ref(false)
@@ -45,10 +53,16 @@ export const useIslandStore = defineStore('island', () => {
   let _mediaResetTimer: ReturnType<typeof setTimeout> | null = null
   /** 自动静默定时器：播放 N 秒后进入静默 */
   let _silentTimer: ReturnType<typeof setTimeout> | null = null
+  /** 客户端位置插值：最后一次服务端同步的播放位置（秒）*/
+  let _syncPos   = 0
+  /** 客户端位置插值：上次同步时的本地时钟（ms）*/
+  let _syncTime  = 0
+  /** requestAnimationFrame 句柄，null 表示未在运行 */
+  let _rafHandle: ReturnType<typeof requestAnimationFrame> | null = null
 
   // ── 计算属性 ──────────────────────────────────────────────
   /**
-   * 当前岛的目标尺寸：
+   * 当前岗的目标尺寸：
    * - 静默模式：极细横条
    * - 未展开时固定为 COMPACT_SIZE
    * - 展开时根据 mode 动态计算
@@ -60,6 +74,26 @@ export const useIslandStore = defineStore('island', () => {
       return COMPACT_SIZE
     }
     return SIZE_MAP[mode.value]
+  })
+
+  /**
+   * 当前歌词行：基于 RAF 插値后的 position + lyricsData 做二分搜索
+   * 这样歌词更新与进度条完全同步，60fps 级
+   */
+  const currentLyric = computed<string>(() => {
+    if (!lyricsEnabled.value || !lyricsData.value.length) return ''
+    const posMs = position.value * 1000 + lyricsDelay.value
+    const t     = Math.max(0, posMs)
+    const lyrics = lyricsData.value
+    if (t < lyrics[0].timeMs) return ''
+    let lo = 0
+    let hi = lyrics.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (lyrics[mid].timeMs <= t) lo = mid
+      else hi = mid - 1
+    }
+    return lyrics[lo].text
   })
 
   // ── 动作 ──────────────────────────────────────────────────
@@ -112,6 +146,28 @@ export const useIslandStore = defineStore('island', () => {
     }, silentModeDelay.value * 1000)
   }
 
+  /** 启动 RAF 位置插值循环（播放中调用）*/
+  function _startRaf(): void {
+    if (_rafHandle !== null) return
+    const tick = (): void => {
+      if (mediaInfo.value?.playbackStatus === 'playing') {
+        const elapsed = (Date.now() - _syncTime) / 1000
+        const d = duration.value
+        const p = Math.max(0, _syncPos + elapsed)
+        position.value = d > 0 ? Math.min(p, d) : p
+      }
+      _rafHandle = requestAnimationFrame(tick)
+    }
+    _rafHandle = requestAnimationFrame(tick)
+  }
+
+  function _stopRaf(): void {
+    if (_rafHandle !== null) {
+      cancelAnimationFrame(_rafHandle)
+      _rafHandle = null
+    }
+  }
+
   /** 进入静默模式：岛收起为极细横条 */
   function enterSilent(): void {
     if (!silentModeEnabled.value) return
@@ -134,10 +190,28 @@ export const useIslandStore = defineStore('island', () => {
 
   /** 接收媒体更新，切换到音乐模式 */
   function applyMediaUpdate(info: MediaInfo): void {
+    const prev = mediaInfo.value
     mediaInfo.value = info
-    if (info.position !== undefined) position.value = info.position
-    if (info.duration !== undefined) duration.value = info.duration
+
+    // 检测换曲：重置播放状态，避免旧歌数据残留
+    if (prev != null && (prev.title !== info.title || prev.artist !== info.artist)) {
+      duration.value  = 0
+      position.value  = 0
+      _syncPos        = 0
+      _syncTime       = Date.now()
+      lyricsData.value = []
+    }
+
+    if (info.position !== undefined && info.position > 0) {
+      // C# sidecar 局部计时器已插値，直接 snap
+      _syncPos  = info.position
+      _syncTime = Date.now()
+      position.value = info.position
+    }
+    // 只在有效时更新 duration，避免酷狗等 App 把 0 覆盖缓存值
+    if (info.duration !== undefined && info.duration > 0) duration.value = info.duration
     if (info.playbackStatus === 'stopped' || info.playbackStatus === 'unknown') {
+      _stopRaf()
       // 停止播放：清除自动静默计时器
       _clearSilentTimer()
       // 安排延迟重置而不是立即重置，避免换曲间短暂丢失会话导致抖闪
@@ -156,6 +230,11 @@ export const useIslandStore = defineStore('island', () => {
     }
     // 有媒体播放：清除延迟定时并切换到音乐模式，不自动展开
     if (_mediaResetTimer) { clearTimeout(_mediaResetTimer); _mediaResetTimer = null }
+    if (info.playbackStatus === 'playing') {
+      _startRaf()
+    } else {
+      _stopRaf()  // paused
+    }
     mode.value = 'MUSIC'
     // 若静默模式已开启且计时器尚未运行，则启动（有 _silentTimer 守护，换曲不会重置倒计时）
     _startSilentTimer()
@@ -190,11 +269,15 @@ export const useIslandStore = defineStore('island', () => {
     window.electron.getSettings().then(({ settings }) => {
       silentModeEnabled.value = settings.silentMode
       silentModeDelay.value   = settings.silentModeDelay
+      lyricsEnabled.value     = settings.lyricsEnabled
+      lyricsDelay.value       = settings.lyricsDelay
     })
 
     const offSettings = window.electron.onSettingsChanged((s) => {
       silentModeEnabled.value = s.silentMode
       silentModeDelay.value   = s.silentModeDelay
+      lyricsEnabled.value     = s.lyricsEnabled
+      lyricsDelay.value       = s.lyricsDelay
       if (!s.silentMode) {
         // 静默模式被关闭：清除计时器，退出横条态
         _clearSilentTimer()
@@ -212,8 +295,11 @@ export const useIslandStore = defineStore('island', () => {
 
     const offMedia    = window.electron.onMediaUpdate(applyMediaUpdate)
     const offPosition = window.electron.onMediaPosition((pos) => {
-      position.value = pos.position
-      duration.value = pos.duration
+      // C# sidecar 现在发送本地插值后的正确位置，直接更新同步基准
+      // RAF 负责每帧内平滑插值（500ms 窗口内）
+      if (pos.duration > 0) duration.value = pos.duration
+      _syncPos  = pos.position
+      _syncTime = Date.now()
     })
     const offNotice = window.electron.onNotification(applyNotification)
     const offBlur   = window.electron.onWindowBlur(() => {
@@ -221,12 +307,25 @@ export const useIslandStore = defineStore('island', () => {
       isPinned.value   = false
       isExpanded.value = false
     })
+    const offLyrics = window.electron.onLyricsData((lines, durationSec) => {
+      lyricsData.value = lines
+      // lrclib/163 API 返回的真实时长，比从歌词末行估算更准确
+      if (durationSec > 0) {
+        duration.value = durationSec
+      } else if (duration.value <= 0 && lines.length > 0) {
+        // fallback：无 API 时长时，用末行时间戳 + 30s 余量估算
+        const lastMs = lines[lines.length - 1].timeMs
+        if (lastMs > 0) duration.value = (lastMs + 30000) / 1000
+      }
+    })
     return () => {
       offSettings()
       offMedia()
       offPosition()
       offNotice()
       offBlur()
+      offLyrics()
+      _stopRaf()
       if (_noticeTimer) clearTimeout(_noticeTimer)
       if (_mediaResetTimer) clearTimeout(_mediaResetTimer)
       _clearSilentTimer()
@@ -244,6 +343,9 @@ export const useIslandStore = defineStore('island', () => {
     notification,
     position,
     duration,
+    currentLyric,
+    lyricsEnabled,
+    lyricsData,
     // computed
     islandSize,
     // actions
