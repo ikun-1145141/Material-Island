@@ -1,5 +1,5 @@
-import { app, ipcMain, BrowserWindow, screen } from 'electron'
-import { createIslandWindow, createSettingsWindow, applySettingsToIsland, setIslandExpanded, ISLAND_MAX_WIDTH, ISLAND_MAX_HEIGHT } from './window'
+import { app, ipcMain, BrowserWindow, screen, nativeTheme } from 'electron'
+import { createIslandWindow, createSettingsWindow, applySettingsToIsland, setIslandExpanded, ISLAND_MAX_WIDTH, ISLAND_MAX_HEIGHT, getSettingsOverlayColors } from './window'
 import { createTray } from './tray'
 import { loadSettings, saveSettings } from './settings-store'
 import { mediaProvider } from './providers/media'
@@ -44,6 +44,15 @@ function openSettings(): void {
   }
   settingsWin = createSettingsWindow()
   settingsWin.on('closed', () => { settingsWin = null })
+
+  // 主题切换时实时更新标题栏配色
+  const updateOverlay = (): void => {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.setTitleBarOverlay({ ...getSettingsOverlayColors(), height: 40 })
+    }
+  }
+  nativeTheme.on('updated', updateOverlay)
+  settingsWin.on('closed', () => nativeTheme.off('updated', updateOverlay))
 }
 
 // ── IPC 注册 ───────────────────────────────────────────────

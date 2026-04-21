@@ -259,8 +259,8 @@ function copyToken(): void {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #1c1b1f;
-  color: #e6e1e5;
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
   font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   font-size: 13px;
   user-select: none;
@@ -273,15 +273,15 @@ function copyToken(): void {
   justify-content: space-between;
   padding: 0 16px;
   height: 40px;
-  background: #1c1b1f;
+  background: var(--md-sys-color-surface);
   -webkit-app-region: drag;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 .titlebar-title {
   font-size: 13px;
   font-weight: 600;
-  color: #cac4d0;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 /* 内容区 */
@@ -293,7 +293,7 @@ function copyToken(): void {
   flex-direction: column;
   gap: 24px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(202,196,208,0.2) transparent;
+  scrollbar-color: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 20%, transparent) transparent;
 }
 .content::-webkit-scrollbar {
   width: 4px;
@@ -302,11 +302,11 @@ function copyToken(): void {
   background: transparent;
 }
 .content::-webkit-scrollbar-thumb {
-  background: rgba(202,196,208,0.2);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 20%, transparent);
   border-radius: 2px;
 }
 .content::-webkit-scrollbar-thumb:hover {
-  background: rgba(202,196,208,0.4);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 40%, transparent);
 }
 
 .section {
@@ -320,7 +320,7 @@ function copyToken(): void {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #938f99;
+  color: var(--md-sys-color-outline);
 }
 
 .row {
@@ -331,7 +331,7 @@ function copyToken(): void {
 .row-label {
   width: 100px;
   flex-shrink: 0;
-  color: #cac4d0;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 /* 滑块 */
@@ -343,14 +343,14 @@ function copyToken(): void {
 }
 .slider {
   flex: 1;
-  accent-color: #d0bcff;
+  accent-color: var(--md-sys-color-primary);
   height: 4px;
   cursor: pointer;
 }
 .slider-val {
   width: 40px;
   text-align: right;
-  color: #d0bcff;
+  color: var(--md-sys-color-primary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -363,18 +363,18 @@ function copyToken(): void {
 .preset-btn {
   padding: 4px 14px;
   border-radius: 99px;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid var(--md-sys-color-outline-variant);
   background: transparent;
-  color: #cac4d0;
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   font-size: 12px;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-.preset-btn:hover { background: rgba(255,255,255,0.08); }
+.preset-btn:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent); }
 .preset-btn.active {
-  background: #4a4458;
-  border-color: #d0bcff;
-  color: #e8def8;
+  background: var(--md-sys-color-primary-container);
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary-container);
 }
 
 /* 下拉框 */
@@ -382,14 +382,14 @@ function copyToken(): void {
   flex: 1;
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: #2b2930;
-  color: #e6e1e5;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   font-size: 13px;
   cursor: pointer;
   outline: none;
 }
-.select:focus { border-color: #d0bcff; }
+.select:focus { border-color: var(--md-sys-color-primary); }
 
 /* 操作按钮 */
 .actions {
@@ -398,7 +398,7 @@ function copyToken(): void {
   gap: 10px;
   margin-top: auto;
   padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 .btn {
   padding: 8px 24px;
@@ -411,13 +411,13 @@ function copyToken(): void {
 }
 .btn:active { transform: scale(0.96); }
 .btn.secondary {
-  background: rgba(255,255,255,0.08);
-  color: #cac4d0;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+  color: var(--md-sys-color-on-surface-variant);
 }
-.btn.secondary:hover { background: rgba(255,255,255,0.12); }
+.btn.secondary:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent); }
 .btn.primary {
-  background: #d0bcff;
-  color: #1c1b1f;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
 }
 .btn.primary:hover { opacity: 0.9; }
 
@@ -437,8 +437,8 @@ function copyToken(): void {
   width: 44px;
   height: 24px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.12);
-  border: 2px solid rgba(255,255,255,0.2);
+  background: var(--md-sys-color-surface-variant);
+  border: 2px solid var(--md-sys-color-outline);
   transition: background 0.2s, border-color 0.2s;
   flex-shrink: 0;
 }
@@ -450,22 +450,22 @@ function copyToken(): void {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #938f99;
+  background: var(--md-sys-color-outline);
   transition: transform 0.2s, background 0.2s;
 }
 .toggle input:checked + .toggle-track {
-  background: #d0bcff;
-  border-color: #d0bcff;
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
 }
 .toggle input:checked + .toggle-track::after {
   transform: translateX(20px);
-  background: #1c1b1f;
+  background: var(--md-sys-color-on-primary);
 }
 
 /* 提示文字 */
 .section-hint {
   font-size: 11px;
-  color: #79747e;
+  color: var(--md-sys-color-outline);
   margin: 0;
   padding-left: 4px;
 }
@@ -474,16 +474,16 @@ function copyToken(): void {
 .text-input {
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: #2b2930;
-  color: #e6e1e5;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
   font-size: 13px;
   outline: none;
   font-family: inherit;
   width: 100px;
 }
 .text-input.flex-1 { flex: 1; width: auto; }
-.text-input:focus { border-color: #d0bcff; }
+.text-input:focus { border-color: var(--md-sys-color-primary); }
 
 /* Token 输入框组 */
 .token-group {
@@ -497,10 +497,10 @@ function copyToken(): void {
 .icon-btn {
   width: 30px;
   height: 30px;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 8px;
-  background: #2b2930;
-  color: #cac4d0;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -509,7 +509,7 @@ function copyToken(): void {
   flex-shrink: 0;
   transition: background 0.15s;
 }
-.icon-btn:hover { background: rgba(255,255,255,0.1); }
+.icon-btn:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface) 10%, var(--md-sys-color-surface-container-high)); }
 .icon-btn .material-symbols-rounded {
   font-size: 18px;
   font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
@@ -520,8 +520,8 @@ function copyToken(): void {
 .addr {
   font-family: 'Cascadia Code', 'Consolas', monospace;
   font-size: 11px;
-  color: #d0bcff;
-  background: rgba(208,188,255,0.08);
+  color: var(--md-sys-color-primary);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
   padding: 1px 5px;
   border-radius: 4px;
 }

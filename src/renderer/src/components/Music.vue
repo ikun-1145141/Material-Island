@@ -258,7 +258,7 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
 .source-badge {
   font-size: 10px;
   color: var(--md-sys-color-outline, #938f99);
-  background: rgba(255,255,255,0.06);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface, #e6e1e5) 8%, transparent);
   padding: 1px 7px;
   border-radius: 99px;
   align-self: flex-start;
@@ -318,7 +318,7 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
 .progress-bar {
   height: 4px;
   border-radius: 99px;
-  background: rgba(255,255,255,0.12);
+  background: color-mix(in srgb, var(--md-sys-color-on-surface, #e6e1e5) 12%, transparent);
   overflow: visible;
   position: relative;
   cursor: pointer;
@@ -374,7 +374,7 @@ function ctrl(action: 'prev' | 'next' | 'toggle'): void {
   transition: background 0.15s, transform 0.1s;
 }
 .ctrl-btn svg { width: 17px; height: 17px; }
-.ctrl-btn:hover { background: rgba(255,255,255,0.08); }
+.ctrl-btn:hover { background: color-mix(in srgb, var(--md-sys-color-on-surface, #e6e1e5) 8%, transparent); }
 .ctrl-btn:active { transform: scale(0.88); }
 .ctrl-btn.primary {
   width: 32px;

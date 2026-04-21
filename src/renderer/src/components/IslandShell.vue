@@ -84,7 +84,7 @@ function handleClick(): void {
 .island-shell.silent {
   border-radius: 3px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  background: rgba(28, 27, 31, 0.85);
+  background: var(--md-sys-color-surface-container-high, #2b2930);
 }
 
 /* 静默横条内容：居中显示呼吸点 */
@@ -100,7 +100,7 @@ function handleClick(): void {
   width: 20px;
   height: 2px;
   border-radius: 1px;
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--md-sys-color-on-surface, #e6e1e5);
   animation: silent-pulse 2.4s ease-in-out infinite;
 }
 

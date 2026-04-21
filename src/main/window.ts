@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, screen, nativeTheme } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { request } from 'http'
@@ -76,6 +76,13 @@ export function applySettingsToIsland(win: BrowserWindow, settings: AppSettings)
   setIslandExpanded(win, false, settings)
 }
 
+/** 根据当前系统深色/浅色模式返回设置窗口的标题栏覆盖配色 */
+export function getSettingsOverlayColors(): { color: string; symbolColor: string } {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: '#1c1b1f', symbolColor: '#cac4d0' }
+    : { color: '#f7f2fa', symbolColor: '#49454f' }
+}
+
 export function createSettingsWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 520,
@@ -87,16 +94,15 @@ export function createSettingsWindow(): BrowserWindow {
     // 这样拖拽由 Windows OS 原生处理，消除 Electron 自定义拖拽在高 DPI/DWM 下的抜闪问题
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#1c1b1f',        // 与设置界面背景色一致
-      symbolColor: '#cac4d0', // 最小化/最大化/关闭按钟图标颜色
-      height: 40,              // 与标题栏高度一致
+      ...getSettingsOverlayColors(),
+      height: 40,
     },
     transparent: false,
     alwaysOnTop: false,
     skipTaskbar: false,
     resizable: true,
     show: false,
-    backgroundColor: '#1c1b1f',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1b1f' : '#f7f2fa',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
